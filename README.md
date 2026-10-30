@@ -11,6 +11,17 @@ Run the RSDS-INFRA application locally through its real Helm chart before produc
 
 No Python, Node, Go, global Kubernetes configuration, AWS credentials, production access or registry push credentials are needed to use the binary. Build it with a temporary Go Docker container. kind 0.33.0 and Helm 4.3.1 are downloaded into the managed workdir when absent from PATH. Kubernetes is pinned to 1.34.0 because the newer default kind image failed to bootstrap on the tested Docker Desktop cgroup-v1 environment. No Docker Desktop settings are changed.
 
+## Get the source
+
+This is a public repository: users do not need GitHub credentials or a Sonar token to build/run it or execute browser tests. The implementation is currently under review in [PR #1](https://github.com/renf7/rsds-infra-local/pull/1). Until it is merged, clone its implementation branch:
+
+```sh
+git clone --branch RSDSINFRA-25-local-testing --single-branch https://github.com/renf7/rsds-infra-local.git
+cd rsds-infra-local
+```
+
+After merge, a normal clone of the default branch will contain the tool. Start Docker Desktop in Linux-container mode before building; `docker info` must succeed. Git and kubectl must also be available in this terminal. The commands below run as a normal local user with permission to access Docker; an administrator terminal is not a product requirement. Windows Docker Desktop normally supplies docker and kubectl on PATH. Linux/macOS users must install kubectl separately if absent.
+
 ## Windows: build and start
 
 From a terminal in this repository (the `.cmd` launcher does not require changing PowerShell execution policy):
@@ -18,6 +29,19 @@ From a terminal in this repository (the `.cmd` launcher does not require changin
 ```powershell
 .\build.cmd
 .\out\rsds-local.exe up --docker-context desktop-linux
+```
+
+To include the optional headless tests on startup, add `--e2e`:
+
+```powershell
+.\out\rsds-local.exe up --docker-context desktop-linux --e2e
+```
+
+Choose one startup command per workdir. If it is already running, use `status` to inspect it, then `down` before starting again with different options. By default the page is available at `http://127.0.0.1:18080`; choose `--port 18081` if that port is occupied. With E2E disabled, no browser image is downloaded or launched. Enabled runs save all 16 test results/screenshots/traces under the managed run directory.
+
+```powershell
+.\out\rsds-local.exe status
+.\out\rsds-local.exe down
 ```
 
 With **no `--pr`**, the chart and every configured image source are cloned from their repository's actual default branch, normally `main`. Images are built locally and tagged with the exact source commit. The runner does not pull a floating production `latest` image and pretend it represents a particular commit.
@@ -42,6 +66,8 @@ An unspecified repository always uses its default branch. Unknown repositories, 
 sh build.sh
 ./out/rsds-local up --docker-context default
 ```
+
+Use `./out/rsds-local up --docker-context default --e2e` to include browser tests. Stop the current workdir first with `./out/rsds-local down` if already running.
 
 On Docker Desktop for macOS the local context may be `desktop-linux`; inspect it first. Only local Unix-socket/named-pipe Docker endpoints are accepted; remote TCP/SSH Docker contexts are rejected.
 
