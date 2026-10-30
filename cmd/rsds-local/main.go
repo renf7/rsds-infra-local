@@ -48,7 +48,8 @@ type Image struct {
 type Check struct {
 	Path       string `json:"path"`
 	Repository string `json:"repository"`
-	File       string `json:"file"`
+	File       string `json:"file,omitempty"`
+	ImageFile  string `json:"imageFile,omitempty"`
 }
 type Manifest struct {
 	Chart  Chart   `json:"chart"`
@@ -207,15 +208,19 @@ func readManifest(path string) (Manifest, error) {
 	}
 	names := map[string]bool{m.Chart.Repository: true}
 	prefixes := map[string]bool{}
+	imageRepositories := map[string]bool{}
 	for _, im := range m.Images {
 		if !repoPattern.MatchString(im.Repository) || !safeRelative(im.Context) || !valuePattern.MatchString(im.ValuesPrefix) || prefixes[im.ValuesPrefix] {
 			return m, errors.New("invalid image entry")
 		}
 		prefixes[im.ValuesPrefix] = true
 		names[im.Repository] = true
+		imageRepositories[im.Repository] = true
 	}
 	for _, c := range m.Checks {
-		if !strings.HasPrefix(c.Path, "/") || !names[c.Repository] || !safeRelative(c.File) {
+		fileSource := c.ImageFile == "" && safeRelative(c.File)
+		imageSource := c.File == "" && imageRepositories[c.Repository] && safeRelative(c.ImageFile) && !strings.Contains(c.ImageFile, "\\")
+		if !strings.HasPrefix(c.Path, "/") || !names[c.Repository] || !(fileSource || imageSource) {
 			return m, errors.New("invalid HTTP/source check")
 		}
 	}
@@ -451,6 +456,10 @@ func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool)
 	return nil
 }
 func checkHTTP(s *State, c Check) (Result, error) {
+	expected, expectedErr := expectedHTTPContent(s, c)
+	if expectedErr != nil {
+		return Result{}, expectedErr
+	}
 	client := &http.Client{Timeout: 3 * time.Second}
 	deadline := time.Now().Add(90 * time.Second)
 	for {
@@ -459,10 +468,6 @@ func checkHTTP(s *State, c Check) (Result, error) {
 			body, readErr := io.ReadAll(io.LimitReader(response.Body, 20<<20))
 			response.Body.Close()
 			if readErr == nil && response.StatusCode == 200 {
-				expected, e := os.ReadFile(filepath.Join(s.Sources[c.Repository].Directory, c.File))
-				if e != nil {
-					return Result{}, e
-				}
 				actualHash := sha256.Sum256(body)
 				expectedHash := sha256.Sum256(expected)
 				if actualHash != expectedHash {

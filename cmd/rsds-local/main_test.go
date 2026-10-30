@@ -123,7 +123,7 @@ func TestCLIValidation(t *testing.T) {
 }
 
 func TestManifestValidation(t *testing.T) {
-	valid := Manifest{Chart: Chart{"rsds-infra-helm", "charts/company-page"}, Images: []Image{{"rsds-infra-company-page", ".", "image"}}, Checks: []Check{{"/", "rsds-infra-company-page", "public/index.html"}}}
+	valid := Manifest{Chart: Chart{"rsds-infra-helm", "charts/company-page"}, Images: []Image{{"rsds-infra-company-page", ".", "image"}}, Checks: []Check{{"/", "rsds-infra-company-page", "public/index.html", ""}}}
 	for _, mode := range []string{"valid", "image", "prefix", "check", "empty"} {
 		m := valid
 		m.Images = append([]Image(nil), valid.Images...)
@@ -186,7 +186,7 @@ func TestHTTPSourceIntegrityAndDownloadLimits(t *testing.T) {
 	}
 	root := t.TempDir()
 	s := &State{URL: server.URL, Sources: map[string]*Source{"rsds-infra-company-page": {Directory: root}}}
-	c := Check{"/", "rsds-infra-company-page", "index.html"}
+	c := Check{"/", "rsds-infra-company-page", "index.html", ""}
 	if _, err := checkHTTP(s, c); err == nil {
 		t.Fatal("missing expected source accepted")
 	}
@@ -315,7 +315,7 @@ func TestHTTPReadinessRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &State{URL: server.URL, Sources: map[string]*Source{"rsds-infra-company-page": {Directory: root}}}
-	if _, err := checkHTTP(s, Check{"/", "rsds-infra-company-page", "index.html"}); err != nil {
+	if _, err := checkHTTP(s, Check{"/", "rsds-infra-company-page", "index.html", ""}); err != nil {
 		t.Fatal(err)
 	}
 	if requests.Load() != 2 {
