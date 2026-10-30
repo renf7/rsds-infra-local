@@ -80,6 +80,7 @@ type State struct {
 	URL           string             `json:"url"`
 	Sources       map[string]*Source `json:"sources"`
 	Results       []Result           `json:"results,omitempty"`
+	E2E           *BrowserResult     `json:"e2e,omitempty"`
 	Status        string             `json:"status"`
 	Created       string             `json:"created"`
 }
@@ -432,6 +433,14 @@ func up(path, root, dcontext, cluster string, port int, prs overrides) error {
 	}
 	if e = os.WriteFile(filepath.Join(s.RunDirectory, "pods.json"), []byte(pods), 0600); e != nil {
 		return e
+	}
+	s.Status = "BROWSER_E2E"
+	if e = save(s); e != nil {
+		return e
+	}
+	if e = runBrowserE2E(s, filepath.Join(filepath.Dir(path), "e2e")); e != nil {
+		s.Status = "FAILED_E2E"
+		return errors.Join(e, save(s))
 	}
 	s.Status = "PASS"
 	if e = save(s); e != nil {

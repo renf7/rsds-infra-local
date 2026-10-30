@@ -67,6 +67,8 @@ jobs:
             .local-main/runs/*/pods.json
             .local-pr/runs/*/report.json
             .local-pr/runs/*/pods.json
+            .local-main/runs/*/e2e/
+            .local-pr/runs/*/e2e/
             coverage.out
       - name: Validate connection configuration
         shell: bash

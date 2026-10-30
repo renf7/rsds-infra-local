@@ -52,7 +52,17 @@ On Docker Desktop for macOS the local context may be `desktop-linux`; inspect it
 3. Creates a uniquely named `rsds-local-*` kind cluster with a private kubeconfig under `.local/runs/`. It never selects your global production Kubernetes context.
 4. Loads the images directly into kind, installs the selected chart with AWS ingress disabled and image pulling disabled, and waits for readiness.
 5. Applies a **local-only** NodePort override and exposes it on `127.0.0.1` at the requested port. This override is not committed to the application chart.
-6. Requests the configured English/Polish pages and assets through the Service and verifies that response bytes match the selected source checkout. Saves `report.json` (commits, PR/default branch, image IDs, checks) and `pods.json`.
+6. Requests the configured English/Polish pages and assets through the Service and verifies that response bytes match the selected source checkout.
+7. Automatically builds the pinned Playwright test image and runs six **headless Chromium E2E tests** against that cluster. No browser window opens and no host Python/Node/browser installation is needed. First run downloads the browser image; subsequent builds reuse Docker layers. Both default-branch and PR modes run this step, with no opt-out that could produce an untested `PASS`.
+8. Saves `report.json` (commits, PR/default branch, image IDs, HTTP checks, browser summary), `pods.json` and `e2e/` artifacts. `up` reports `PASS` only after every check succeeds.
+
+## Automatic headless E2E tests
+
+Every normal `up` command runs the suite in [e2e/test_site.py](e2e/test_site.py). It covers English/Polish desktop navigation, persisted language choice and reload, Polish country redirect with query/fragment preservation, unknown-country fallback, and mobile page/language-switch behavior. It also checks page sections, loaded branding, contact link, horizontal overflow, browser exceptions, console errors and failed resources. The country service is mocked for deterministic tests; unexpected external requests fail. Email links are checked without sending email. These tests do not claim SSO/backend coverage or pixel-perfect visual regression.
+
+The browser container runs as an unprivileged user with capabilities dropped, no Docker socket, no host mounts and no production credentials. It joins the local kind network to reach the selected cluster's NodePort. Reports are copied out and the test container removed. A test/report/container failure makes `up` exit nonzero and records `FAILED_E2E`; the deployment is retained for inspection and normal `down` cleanup.
+
+Each managed run's `e2e/` directory contains `results.json`, JUnit `junit.xml`, `browser.log`, screenshots and Playwright trace ZIPs. Open traces with a trusted local Playwright trace viewer when needed. Traces/screenshots can contain tested page content, so review them before sharing if future tests introduce private data. CI runs the same automatic suite for both source-selection modes and uploads only these artifacts and the existing sanitized reports, never kubeconfig files. Jira: [RSDSINFRA-26](https://rsdsoftware.atlassian.net/browse/RSDSINFRA-26).
 
 The chart and application security settings are inherited from the selected source revision. Testing `main` does not silently apply security settings that only exist in a PR. This is a functional local smoke test, not proof of production ingress/TLS, AWS ALB, SSO or future backend behavior.
 

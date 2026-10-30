@@ -13,6 +13,23 @@ concurrency:
   group: security-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  e2e-image:
+    name: Trivy headless browser image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build local-only browser test image
+        run: docker build --pull -t rsds-local/e2e:security e2e
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          version: v0.76.1
+          image-ref: rsds-local/e2e:security
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: false
   trivy:
     name: Trivy repository
     runs-on: ubuntu-latest

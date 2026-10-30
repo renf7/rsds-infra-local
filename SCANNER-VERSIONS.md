@@ -4,19 +4,20 @@ Verified 30 October 2026 against official upstream GitHub releases and the repos
 
 | Check | Version / scope | Trigger |
 | --- | --- | --- |
-| CodeQL | Action 4.39.1; Go and GitHub Actions; security-extended queries | Every PR update, main pushes, weekly |
+| CodeQL | Action 4.39.1; Go, Python E2E tooling and GitHub Actions; security-extended queries | Every PR update, main pushes, weekly |
 | Semgrep Community Edition | 1.183.0; OSS engine, community p/default rules; no account | Every PR update, main pushes, weekly |
 | Trivy repository | CLI 0.76.1 / Action 0.36.0; dependencies, misconfiguration, secrets | Every PR update, main pushes, weekly |
 | PR dependency vulnerability scan | Trivy 0.76.1; full manifest scan, not native base/head dependency diff | Every PR update |
 | SonarQube Cloud | Scan Action 8.4.0; public rsds-infra-local project, blocking quality gate | Same-repository PRs to main, main pushes, weekly |
 | Go checks | gofmt, go test -race, go vet; Go 1.26 | Every PR update and main pushes |
-| Dependabot version updates | GitHub Actions, pip scanner tools, Go modules | Weekly after configuration reaches main |
+| Trivy E2E image | CLI 0.76.1 / Action 0.36.0; built browser test image vulnerabilities/secrets | Every PR update, main pushes, weekly |
+| Dependabot version updates | GitHub Actions, pip scanner/E2E tools, Go modules, E2E Docker base | Weekly after configuration reaches main |
 | Dependabot alerts / security fixes | Native free features; enabled and read back via API | GitHub advisory/dependency processing |
 | Secret scanning / push protection | Native free public-repository features; verified enabled via API | GitHub scanning and supported-secret push blocking |
 
 PR workflows explicitly handle opened, synchronize, reopened, edited and ready_for_review. Synchronize covers each new commit and force-push; no source-path filters are used. Superseded runs are cancelled. Sonar's token is never supplied to fork PRs. Native Dependabot and secret protection are event-driven services rather than per-commit CI jobs; Trivy additionally scans dependencies and secrets on PR updates.
 
-No React/Java tooling is installed: this repository is permanently scoped to Go and local-test orchestration. Application containers built for local tests belong to their source repositories; their publishing pipelines retain responsibility for container scanning before publication. This repository does not publish a container image.
+No React/Java tooling is installed: this repository is permanently scoped to Go and local-test orchestration. Playwright Python 1.64.1 matches official mcr.microsoft.com/playwright/python:v1.64.1-noble (verified from PyPI and the registry on 30 October 2026). Python is browser-test tooling only. Application containers built for local tests belong to their source repositories; their publishing pipelines retain responsibility for container scanning before publication. This repository builds/scans its browser test image locally and does not publish it.
 
 Native status verified: secret_scanning enabled, secret_scanning_push_protection enabled, vulnerability-alerts GET returned HTTP 204, automated-security-fixes GET returned enabled=true and paused=false. No paid security tier was enabled. Branch protection is not asserted by this audit.
 
