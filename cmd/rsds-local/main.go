@@ -73,20 +73,21 @@ type Result struct {
 	SourceMatches bool   `json:"sourceMatches"`
 }
 type State struct {
-	AuthEnabled   bool               `json:"authenticationEnabled"`
-	Owner         string             `json:"owner"`
-	Cluster       string             `json:"cluster"`
-	DockerContext string             `json:"dockerContext"`
-	Kubeconfig    string             `json:"kubeconfig"`
-	WorkRoot      string             `json:"workRoot"`
-	RunDirectory  string             `json:"runDirectory"`
-	URL           string             `json:"url"`
-	Sources       map[string]*Source `json:"sources"`
-	Results       []Result           `json:"results,omitempty"`
-	E2E           *BrowserResult     `json:"e2e,omitempty"`
-	E2EEnabled    bool               `json:"e2eEnabled"`
-	Status        string             `json:"status"`
-	Created       string             `json:"created"`
+	AuthEnabled          bool               `json:"authenticationEnabled"`
+	IdentityProviderMode string             `json:"identityProviderMode,omitempty"`
+	Owner                string             `json:"owner"`
+	Cluster              string             `json:"cluster"`
+	DockerContext        string             `json:"dockerContext"`
+	Kubeconfig           string             `json:"kubeconfig"`
+	WorkRoot             string             `json:"workRoot"`
+	RunDirectory         string             `json:"runDirectory"`
+	URL                  string             `json:"url"`
+	Sources              map[string]*Source `json:"sources"`
+	Results              []Result           `json:"results,omitempty"`
+	E2E                  *BrowserResult     `json:"e2e,omitempty"`
+	E2EEnabled           bool               `json:"e2eEnabled"`
+	Status               string             `json:"status"`
+	Created              string             `json:"created"`
 }
 type overrides map[string]int
 
@@ -226,6 +227,16 @@ func readManifest(path string) (Manifest, error) {
 			return m, errors.New("invalid HTTP/source check")
 		}
 	}
+	if m.Authentication {
+		authImage, fixtureImage := false, false
+		for _, image := range m.Images {
+			authImage = authImage || (image.Repository == "rsds-infra-auth-service" && image.ValuesPrefix == "auth.image")
+			fixtureImage = fixtureImage || (image.Repository == "rsds-infra-local" && image.ValuesPrefix == "idp.image" && image.Context == "test-idp")
+		}
+		if !authImage || !fixtureImage {
+			return m, errors.New("authentication manifest must build the auth and local protocol fixture images")
+		}
+	}
 	if len(m.Checks) == 0 {
 		return m, errors.New("at least one HTTP check is required")
 	}
@@ -330,6 +341,9 @@ func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool)
 	}
 	s.E2EEnabled = e2e
 	s.AuthEnabled = m.Authentication
+	if s.AuthEnabled {
+		s.IdentityProviderMode = "local-protocol-fixture"
+	}
 	s.Kubeconfig = filepath.Join(s.RunDirectory, "kubeconfig")
 	if e = localDocker(s); e != nil {
 		return e
@@ -429,7 +443,7 @@ func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool)
 		helmArgs = append(helmArgs, "--set", im.ValuesPrefix+".repository=rsds-local/"+im.Repository, "--set", im.ValuesPrefix+".tag="+tag, "--set", im.ValuesPrefix+".pullPolicy=Never")
 	}
 	if s.AuthEnabled {
-		helmArgs = append(helmArgs, "--set", "auth.enabled=true", "--set", "auth.local=true", "--set", "dynamodb.enabled=true", "--set", "idp.enabled=true", "--set", "auth.signingSecretName=rsds-local-auth-signing", "--set", "auth.trustSecretName=rsds-local-auth-trust")
+		helmArgs = append(helmArgs, "--set", "auth.enabled=true", "--set", "auth.local=true", "--set", "dynamodb.enabled=true", "--set", "idp.enabled=true", "--set", "auth.signingSecretName=rsds-local-auth-signing", "--set", "auth.trustSecretName=rsds-local-auth-trust", "--set", "idp.clientTrustSecretName=rsds-local-idp-client-trust")
 	}
 	if _, e = run("", nil, helm, helmArgs...); e != nil {
 		return e

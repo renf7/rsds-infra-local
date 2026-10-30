@@ -2,3 +2,4 @@
 !Dockerfile
 !requirements.txt
 !test_site.py
+!test_auth.py

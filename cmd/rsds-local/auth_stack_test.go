@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
@@ -41,5 +42,26 @@ func TestLocalSigningKeysMatchAndExpire(t *testing.T) {
 	}
 	if err = cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature); err != nil {
 		t.Fatal(err)
+	}
+	appleBytes, err := os.ReadFile(filepath.Join(directory, "apple.p8"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	appleBlock, _ := pem.Decode(appleBytes)
+	apple, err := x509.ParsePKCS8PrivateKey(appleBlock.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicBytes, err := os.ReadFile(filepath.Join(directory, "apple-public.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicBlock, _ := pem.Decode(publicBytes)
+	public, err := x509.ParsePKIXPublicKey(publicBlock.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !apple.(*ecdsa.PrivateKey).PublicKey.Equal(public) {
+		t.Fatal("Apple fixture does not have the matching public client key")
 	}
 }

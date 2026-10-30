@@ -9,9 +9,13 @@ import secrets
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec, utils
+from cryptography.exceptions import InvalidSignature
 
 PROVIDERS = {'google', 'microsoft', 'apple', 'github', 'facebook'}
 OIDC = {'google', 'microsoft', 'apple'}
@@ -22,6 +26,28 @@ INVALID_KEY = rsa.generate_private_key(public_exponent=65537, key_size=3072)
 CODES = {}
 TOKENS = {}
 LOCK = threading.Lock()
+APPLE_CLIENT_KEY = serialization.load_pem_public_key(Path('/run/client-trust/apple-public.pem').read_bytes())
+
+
+def verify_client(provider, token):
+    if provider != 'apple':
+        return hmac.compare_digest(token, 'local-fixture-secret')
+    try:
+        header, payload, signature = token.split('.')
+        metadata = json.loads(base64.urlsafe_b64decode(header + '=='))
+        claims = json.loads(base64.urlsafe_b64decode(payload + '=='))
+        raw = base64.urlsafe_b64decode(signature + '==')
+        if len(raw) != 64 or metadata.get('alg') != 'ES256' or metadata.get('kid') != 'local-apple-client':
+            return False
+        der = utils.encode_dss_signature(int.from_bytes(raw[:32], 'big'), int.from_bytes(raw[32:], 'big'))
+        APPLE_CLIENT_KEY.verify(der, (header + '.' + payload).encode(), ec.ECDSA(hashes.SHA256()))
+        now = time.time()
+        audience = claims.get('aud')
+        return (claims.get('iss') == 'LOCALTEAM' and claims.get('sub') == 'local-apple'
+                and (audience == 'https://appleid.apple.com' or audience == ['https://appleid.apple.com'])
+                and claims.get('iat', now + 100) <= now + 30 and now < claims.get('exp', 0) <= now + 330)
+    except (ValueError, KeyError, TypeError, InvalidSignature):
+        return False
 
 
 def b64(value):
@@ -149,7 +175,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'invalid_grant'})
         _, request, invalid, _ = item
         valid = (fields.get('grant_type') == 'authorization_code' and fields.get('client_id') == request['client_id']
-                 and hmac.compare_digest(fields.get('client_secret', ''), 'local-fixture-secret')
+                 and verify_client(provider, fields.get('client_secret', ''))
                  and fields.get('redirect_uri') == request['redirect_uri'])
         if provider in PKCE:
             valid = valid and hmac.compare_digest(b64(hashlib.sha256(fields.get('code_verifier', '').encode()).digest()), request['code_challenge'])

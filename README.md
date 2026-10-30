@@ -238,6 +238,35 @@ Read this README, [AGENTS.md](AGENTS.md) and the repository security standard be
 
 ## Add backend images later
 
+## Full authentication stack (optional)
+
+The default `local-test.json` remains frontend-only. Use `--manifest local-test-auth.json` to include the one Spring Boot authentication backend, **one DynamoDB Local database**, and a local OAuth/OIDC provider-boundary fixture. E2E remains **disabled by default** for either manifest. This is a test environment; it never signs in to live Facebook/Microsoft/Google/Apple/GitHub accounts or needs provider secrets.
+
+Until the linked feature changes merge, run this exact selection from this repository after rebuilding `out/rsds-local.exe`:
+
+```powershell
+$env:DOCKER_CONTEXT = 'desktop-linux'
+.\build.cmd
+if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+.\out\rsds-local.exe up --docker-context desktop-linux --manifest local-test-auth.json --pr rsds-infra-company-page=17 --pr rsds-infra-helm=9 --pr rsds-infra-auth-service=1 --pr rsds-infra-local=1 --e2e --port 18091 --cluster rsds-local-auth-review --workdir .local-auth-review
+.\out\rsds-local.exe status --workdir .local-auth-review
+.\out\rsds-local.exe down --workdir .local-auth-review
+```
+
+Use your actual context and a free port/unique cluster/workdir. Linux/macOS use `./out/rsds-local` after `sh build.sh`. After all feature PRs merge, omit the overrides to select defaults. The `rsds-infra-local=1` override selects the fixture image source from this repository; the already built runner/test code still comes from your current local checkout. Rebuild after pulling changes. Do not reuse a frontend-only workdir without its normal `down`.
+
+For an enabled full-stack run require zero exit status, `report.json` status `PASS`, `authenticationEnabled=true`, `identityProviderMode=local-protocol-fixture`, and `e2e` with 36 passing headless Chromium tests and no failures/errors. Source SHAs/image IDs must match the intended revisions. The 20 added auth scenarios cover all five code/callback flows to a real browser JWT cookie, denied consent, invalid OIDC signatures, forged state, tampered application JWT, CSRF/logout, refresh rotation/replay and signed-in mobile controls. Cookies reach Chromium as HttpOnly; no app login/JWT/session responses are intercepted. Provider-only fixture requests use actual code/token/userinfo/JWKS endpoints, signed OIDC tokens, PKCE where applicable and Apple's form POST. Country lookup remains the original deterministic mock.
+
+The runner generates fresh RSA-3072 private material, a 48-hour public X.509 certificate, and an independent P-256 Apple client key using Go's standard library. It creates three purpose-scoped Kubernetes Secrets: RSA/Apple private PEMs for auth only, the public RSA certificate for backend verification, and the public Apple client key for the fixture. Keys are kept under the private ignored run directory; no OpenSSL/keytool installation is needed. **Do not share `auth-keys/`, state or kubeconfig.** Public certificates do not confer signing authority. Browser screenshots/JUnit/summary contain test identities only; auth tests deliberately do not capture token-bearing Playwright traces. Original marketing tests retain their existing traces. Review all artifacts before sharing.
+
+Known startup issue found during implementation: the official DynamoDB Local image's `/home/dynamodblocal` is mode 0700 owned by UID/GID 1000. Running it as the application UID 10001 caused `Unable to access jarfile DynamoDBLocal.jar`. The chart now runs **only that database container as non-root 1000**, keeps its root filesystem read-only and grants bounded `/tmp`; auth/fixture retain 10001. Do not fix this by running the database as root or making the whole filesystem writable. A browser build failure `test_auth.py: not found` means the E2E context allowlist/source is stale; the updated `.dockerignore` explicitly includes it.
+
+The local chart rejects a test identity provider or DynamoDB Local unless `auth.local=true`; the runner supplies local-only settings. The database is ephemeral (`-inMemory -sharedDb`), so `down` destroys test identities/refresh state. This is deliberate test isolation, not a production backup strategy. Production uses external provider app registrations, HTTPS callbacks, protected signing/trust mounts, one real DynamoDB table/workload identity and an agreed certificate/backup lifecycle. A passing fixture run is not live-provider/MFA/app-registration verification.
+
+Full auth CI explicitly opts in to this manifest and uploads only selected report/browser artifacts, never generated keys or kubeconfig. All future backend additions still need repository/Helm values entries, meaningful checks and the scanner baseline; an omitted backend is not implicitly tested.
+
+## Add other backend images later
+
 `local-test.json` is the explicit image allowlist. Add one entry per existing backend, specifying its repository, Docker build context and actual Helm values prefix, for example `services.auth.image`. The chart must already deploy that service and understand those values. The runner then builds the backend from main/default unless its own `--pr rsds-infra-auth-service=NUMBER` override is supplied. Add meaningful API health checks when those services exist; the current manifest includes only the existing frontend. No placeholder backend is reported as tested.
 
 ## Development and free scanners
@@ -251,3 +280,5 @@ go build ./cmd/rsds-local
 The Go implementation uses only the standard library. Follow [AGENTS.md](AGENTS.md), the [scanner coverage/version audit](SCANNER-VERSIONS.md), and the central RSDS-INFRA scanner standard. Applicable scanners run on PR opened/synchronize/reopened/edited/ready-for-review events: CodeQL (Go/Actions), Semgrep CE, Trivy, dependency scanning and SonarCloud. Dependabot checks Actions, Go modules and the Semgrep pin weekly once its configuration reaches main. React lint and Java bytecode scanners are excluded from this Go/tooling-only repository.
 
 SonarCloud needs a repository Actions secret `SONAR_TOKEN`, a public project key `rsds-infra-local` in organization `renf7`, verified free/OSS plan eligibility, and CI-based analysis. No enable flag is used; missing credentials fail visibly. Token-based scans exclude fork PRs. Main/PR results and coverage are separate; no quality gate is bypassed. Native secret scanning, push protection, Dependabot alerts and automated security fixes were enabled and verified on 30 October 2026; see [SECURITY.md](SECURITY.md). Required-check branch protection is a separate setting.
+
+When repeating a stopped authentication run, omit --cluster to get a fresh timestamped name, or supply a new rsds-local-* name. Old run directories are intentionally retained and must not be overwritten. Inspect the new report's runDirectory rather than assuming the first example's directory. Local Apple uses real ES256 client-secret signing; the fixture mounts only the generated public client key. JWT signing private keys and Apple client private keys never go to the fixture or other backends.

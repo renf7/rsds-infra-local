@@ -22,3 +22,11 @@ There are 16 test methods, with both language routes and multiple viewport width
 Country responses are mocked; tests never call the external country service. The HTTP 503 scenario accepts only the deliberately mocked endpoint's exact 503 response/resource message. Other HTTP, console, request or JavaScript errors still fail. Contact links are inspected without launching an email client or sending email.
 
 These tests cover current static behavior. They do not claim pixel-perfect visual regression or coverage of future login, theme switching, backend services or role authorization. Keep the behavioral contracts when the frontend implementation changes, adjusting selectors only where necessary.
+
+## Optional authentication integration
+
+Select `--manifest local-test-auth.json --e2e` and the four matching PR overrides documented in the root README. This runs 36 headless tests: the 16 existing marketing behavior tests plus 20 authentication tests. Authentication remains disabled in the default manifest; browser tests always require the explicit flag.
+
+All five provider flows traverse the real browser, Spring Security callback, real DynamoDB Local adapter, signed JWT cookie and authenticated API. The local provider fixture replaces only external OAuth/OIDC endpoints. It checks state-bound one-use authorization codes, redirects, nonce, supported PKCE and Apple's real ES256 client-secret signature using a public key only. Tests cover consent denial, invalid OIDC signatures, forged state, tampered JWTs, CSRF, logout, refresh replay, Polish return navigation and the signed-in 320px header.
+
+Reports explicitly identify `identityProviderMode=local-protocol-fixture`. No live provider accounts or app registrations are used, so this is not proof of live-provider interoperability, consent policies or MFA. Authentication traces are omitted to avoid recording credentials; screenshots, JSON and JUnit remain. Never upload generated signing keys, kubeconfigs, JWTs or cookies.
