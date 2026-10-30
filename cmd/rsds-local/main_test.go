@@ -276,11 +276,11 @@ func TestStartupRejectsUnknownSourcesAndMissingTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := up(manifest, t.TempDir(), "default", "rsds-local-test", 18080, overrides{"rsds-infra-unknown": 1}); err == nil || !strings.Contains(err.Error(), "not in the manifest") {
+	if err := up(manifest, t.TempDir(), "default", "rsds-local-test", 18080, overrides{"rsds-infra-unknown": 1}, false); err == nil || !strings.Contains(err.Error(), "not in the manifest") {
 		t.Fatalf("unknown source: %v", err)
 	}
 	t.Setenv("PATH", t.TempDir())
-	if err := up(manifest, t.TempDir(), "default", "rsds-local-test", 18080, nil); err == nil || !strings.Contains(err.Error(), "install docker") {
+	if err := up(manifest, t.TempDir(), "default", "rsds-local-test", 18080, nil, false); err == nil || !strings.Contains(err.Error(), "install docker") {
 		t.Fatalf("missing prerequisite: %v", err)
 	}
 	if _, err := run("", nil, "git", "--version"); err == nil {

@@ -19,6 +19,22 @@ type BrowserResult struct {
 	Passed   bool   `json:"passed"`
 }
 
+func verifyBrowserE2E(s *State, context string) error {
+	if !s.E2EEnabled {
+		fmt.Println("Headless E2E disabled; add --e2e to enable browser tests.")
+		return nil
+	}
+	s.Status = "BROWSER_E2E"
+	if err := save(s); err != nil {
+		return err
+	}
+	if err := runBrowserE2E(s, context); err != nil {
+		s.Status = "FAILED_E2E"
+		return errors.Join(err, save(s))
+	}
+	return nil
+}
+
 func browserImage(context string) (string, error) {
 	hash := sha256.New()
 	for _, name := range []string{"Dockerfile", "requirements.txt", "test_site.py", ".dockerignore"} {

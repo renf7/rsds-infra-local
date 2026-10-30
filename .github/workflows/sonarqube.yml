@@ -44,10 +44,10 @@ jobs:
           go test -covermode=atomic -coverprofile=coverage-unit.out ./... -args -test.gocoverdir="$GOCOVERDIR"
           go vet ./...
           go build -cover -covermode=atomic -o out/rsds-local ./cmd/rsds-local
-          out/rsds-local up --docker-context default --workdir .local-main --cluster rsds-local-ci-main --port 18080
+          out/rsds-local up --docker-context default --workdir .local-main --cluster rsds-local-ci-main --port 18080 --e2e
           out/rsds-local status --workdir .local-main
           out/rsds-local down --workdir .local-main
-          out/rsds-local up --docker-context default --workdir .local-pr --cluster rsds-local-ci-pr --port 18081 --pr rsds-infra-helm=4 --pr rsds-infra-company-page=9
+          out/rsds-local up --docker-context default --workdir .local-pr --cluster rsds-local-ci-pr --port 18081 --pr rsds-infra-helm=4 --pr rsds-infra-company-page=9 --e2e
           out/rsds-local status --workdir .local-pr
           out/rsds-local down --workdir .local-pr
           go tool covdata textfmt -i=coverage-data -o=coverage.out

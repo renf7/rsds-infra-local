@@ -81,6 +81,7 @@ type State struct {
 	Sources       map[string]*Source `json:"sources"`
 	Results       []Result           `json:"results,omitempty"`
 	E2E           *BrowserResult     `json:"e2e,omitempty"`
+	E2EEnabled    bool               `json:"e2eEnabled"`
 	Status        string             `json:"status"`
 	Created       string             `json:"created"`
 }
@@ -145,6 +146,7 @@ func entry(args []string) error {
 	dockerContext := fs.String("docker-context", "", "local Docker context (required for up)")
 	cluster := fs.String("cluster", "", "unique rsds-local-* cluster name")
 	port := fs.Int("port", 18080, "loopback HTTP port")
+	e2e := fs.Bool("e2e", false, "run optional headless browser E2E tests")
 	prs := overrides{}
 	fs.Var(prs, "pr", "repeatable repository=PR or GitHub PR URL")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -180,10 +182,10 @@ func entry(args []string) error {
 	if !clusterPattern.MatchString(*cluster) {
 		return errors.New("cluster name must start rsds-local- and contain only lowercase letters, digits and hyphens")
 	}
-	return up(manifestAbs, root, *dockerContext, *cluster, *port, prs)
+	return up(manifestAbs, root, *dockerContext, *cluster, *port, prs, *e2e)
 }
 func usage() {
-	fmt.Println("rsds-local up --docker-context desktop-linux [--pr rsds-infra-helm=4] [--pr rsds-infra-company-page=9] [--port 18080]\nrsds-local status\nrsds-local down\nWithout --pr, every source/image is built from its repository's actual default branch. Run from the repository root.")
+	fmt.Println("rsds-local up --docker-context desktop-linux [--pr rsds-infra-helm=4] [--pr rsds-infra-company-page=9] [--port 18080] [--e2e]\nrsds-local status\nrsds-local down\nWithout --pr, every source/image is built from its repository's actual default branch. Run from the repository root.")
 }
 func readManifest(path string) (Manifest, error) {
 	var m Manifest
@@ -282,7 +284,7 @@ func localDocker(s *State) error {
 	_, e = docker(s, "info", "--format", "{{.ServerVersion}}")
 	return e
 }
-func up(path, root, dcontext, cluster string, port int, prs overrides) error {
+func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool) error {
 	m, e := readManifest(path)
 	if e != nil {
 		return e
@@ -316,6 +318,7 @@ func up(path, root, dcontext, cluster string, port int, prs overrides) error {
 	if e = os.MkdirAll(s.RunDirectory, 0700); e != nil {
 		return e
 	}
+	s.E2EEnabled = e2e
 	s.Kubeconfig = filepath.Join(s.RunDirectory, "kubeconfig")
 	if e = localDocker(s); e != nil {
 		return e
@@ -434,13 +437,8 @@ func up(path, root, dcontext, cluster string, port int, prs overrides) error {
 	if e = os.WriteFile(filepath.Join(s.RunDirectory, "pods.json"), []byte(pods), 0600); e != nil {
 		return e
 	}
-	s.Status = "BROWSER_E2E"
-	if e = save(s); e != nil {
+	if e = verifyBrowserE2E(s, filepath.Join(filepath.Dir(path), "e2e")); e != nil {
 		return e
-	}
-	if e = runBrowserE2E(s, filepath.Join(filepath.Dir(path), "e2e")); e != nil {
-		s.Status = "FAILED_E2E"
-		return errors.Join(e, save(s))
 	}
 	s.Status = "PASS"
 	if e = save(s); e != nil {

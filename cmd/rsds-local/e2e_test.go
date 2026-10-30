@@ -1,10 +1,41 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestBrowserE2ERequiresExplicitOptIn(t *testing.T) {
+	root := t.TempDir()
+	s := &State{WorkRoot: root, RunDirectory: root, Status: "VERIFYING"}
+	missing := filepath.Join(root, "missing-browser-source")
+	if err := verifyBrowserE2E(s, missing); err != nil {
+		t.Fatal(err)
+	}
+	if s.E2E != nil || s.Status != "VERIFYING" {
+		t.Fatal("disabled E2E changed validation state")
+	}
+	if _, err := os.Stat(filepath.Join(root, "e2e")); !os.IsNotExist(err) {
+		t.Fatal("disabled E2E created browser artifacts")
+	}
+	s.E2EEnabled = true
+	if err := verifyBrowserE2E(s, missing); err == nil {
+		t.Fatal("enabled E2E skipped missing test source")
+	}
+	data, err := os.ReadFile(filepath.Join(root, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved State
+	if err = json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if !saved.E2EEnabled || saved.Status != "FAILED_E2E" {
+		t.Fatal("enabled E2E failure not recorded")
+	}
+}
 
 func TestBrowserReportMustProveHeadlessSuccess(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "results.json")
