@@ -95,6 +95,11 @@ func TestRunRejectsUnapprovedExecutable(t *testing.T) {
 }
 
 func TestCLIValidation(t *testing.T) {
+	for _, command := range []string{"up", "status", "down"} {
+		if err := entry([]string{command, "--help"}); err != nil {
+			t.Fatalf("help for %s failed: %v", command, err)
+		}
+	}
 	if err := entry(nil); err != nil {
 		t.Fatal(err)
 	}
