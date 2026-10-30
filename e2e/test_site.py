@@ -33,26 +33,44 @@ class SiteTests(unittest.TestCase):
         self.errors = []
         self.country = "US"
         self.country_unavailable = False
+        self.country_status = 200
+        self.country_requests = 0
         self.context.route("**/*", self.route_request)
         self.page = self.context.new_page()
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
-        self.page.on("console", lambda message: self.errors.append(message.text) if message.type == "error" else None)
-        self.page.on("response", lambda response: self.errors.append(f"HTTP {response.status}: {response.url}") if response.status >= 400 else None)
+        self.page.on("console", self.record_console)
+        self.page.on("response", self.record_response)
         self.page.on("requestfailed", self.request_failed)
 
     def route_request(self, route):
         target = urlsplit(route.request.url)
         if target.hostname == "api.country.is":
+            self.country_requests += 1
             # Deterministic and offline: exercise country selection without calling a third party.
             if self.country_unavailable:
                 route.fulfill(status=200, content_type="application/json", body="{}")
             else:
-                route.fulfill(status=200, content_type="application/json", body=json.dumps({"country": self.country}))
+                route.fulfill(status=self.country_status, content_type="application/json", body=json.dumps({"country": self.country}))
         elif target.netloc == urlsplit(BASE_URL).netloc:
             route.continue_()
         else:
             self.errors.append(f"Unexpected external request: {route.request.url}")
             route.abort()
+
+    def record_console(self, message):
+        if message.type != "error":
+            return
+        # The failure scenario deliberately serves a 503 from this mock only.
+        if self.country_status == 503 and message.location.get("url") == "https://api.country.is/" and "503" in message.text:
+            return
+        self.errors.append(message.text)
+
+    def record_response(self, response):
+        if response.status < 400:
+            return
+        if self.country_status == 503 and response.url == "https://api.country.is/" and response.status == 503:
+            return
+        self.errors.append(f"HTTP {response.status}: {response.url}")
 
     def request_failed(self, request):
         # Location.replace may intentionally cancel the superseded document request.
@@ -128,6 +146,105 @@ class SiteTests(unittest.TestCase):
         self.assert_page("pl")
         self.page.locator('.hero-actions a[href="#contact"]').click()
         expect(self.page).to_have_url(BASE_URL + "/pl/#contact")
+
+    def test_all_section_links_ctas_and_brand_home(self):
+        for route in ("/", "/pl/"):
+            with self.subTest(route=route):
+                self.page.goto(BASE_URL + route)
+                for section in ("java", "ai", "team", "services", "contact"):
+                    self.page.locator(f'.site-nav a[href="#{section}"]').click()
+                    expect(self.page).to_have_url(BASE_URL + route + "#" + section)
+                    expect(self.page.locator(f"#{section} h2")).to_be_in_viewport()
+                self.page.locator(".brand").click()
+                expect(self.page).to_have_url(BASE_URL + route)
+                expect(self.page.locator("h1")).to_be_in_viewport()
+                for section in ("services", "contact"):
+                    self.page.locator(f'.hero-actions a[href="#{section}"]').click()
+                    expect(self.page).to_have_url(BASE_URL + route + "#" + section)
+                    expect(self.page.locator(f"#{section} h2")).to_be_in_viewport()
+
+    def test_language_links_work_with_keyboard(self):
+        self.page.goto(BASE_URL + "/")
+        for language, route in (("pl", "/pl/"), ("en", "/")):
+            link = self.page.locator(f'[data-language-choice="{language}"]')
+            link.focus()
+            expect(link).to_be_focused()
+            self.page.keyboard.press("Enter")
+            expect(self.page).to_have_url(BASE_URL + route)
+            expect(self.page.locator("html")).to_have_attribute("lang", language)
+
+    def test_responsive_navigation_breakpoint(self):
+        self.page.goto(BASE_URL + "/")
+        for width in (320, 390, 640, 641, 1024):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 900})
+                java = self.page.locator('.site-nav a[href="#java"]')
+                if width <= 640:
+                    expect(java).to_be_hidden()
+                else:
+                    expect(java).to_be_visible()
+                expect(self.page.locator(".site-nav .nav-cta")).to_be_visible()
+                for language in ("en", "pl"):
+                    expect(self.page.locator(f'[data-language-choice="{language}"]')).to_be_visible()
+                self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= innerWidth"), f"Overflow at {width}px")
+
+    def test_saved_english_preference_overrides_polish_country(self):
+        self.country = "PL"
+        self.context.add_init_script('localStorage.setItem("rsd-language-preference", "en")')
+        self.page.goto(BASE_URL + "/")
+        self.assert_page("en")
+        self.assertEqual(0, self.country_requests, "Saved preference should avoid country lookup")
+
+    def test_saved_polish_preference_redirects_index_with_query_and_hash(self):
+        self.context.add_init_script('localStorage.setItem("rsd-language-preference", "pl")')
+        self.page.goto(BASE_URL + "/index.html?source=bookmark#team", wait_until="domcontentloaded")
+        expect(self.page).to_have_url(BASE_URL + "/pl/?source=bookmark#team")
+        expect(self.page.locator("html")).to_have_attribute("lang", "pl")
+        self.assertEqual(0, self.country_requests)
+
+    def test_cached_polish_country_redirects_without_lookup(self):
+        self.context.add_init_script('sessionStorage.setItem("rsd-detected-country", "PL")')
+        self.page.goto(BASE_URL + "/", wait_until="domcontentloaded")
+        expect(self.page).to_have_url(BASE_URL + "/pl/")
+        self.assertEqual(0, self.country_requests)
+
+    def test_country_is_normalized_and_cached_across_english_entries(self):
+        self.country = "us"
+        self.page.goto(BASE_URL + "/")
+        self.page.wait_for_function('sessionStorage.getItem("rsd-detected-country") === "US"')
+        self.assertEqual(1, self.country_requests)
+        self.page.goto(BASE_URL + "/index.html")
+        self.assert_page("en")
+        self.page.reload()
+        self.assertEqual(1, self.country_requests, "Cached country should prevent repeat lookups")
+
+    def test_direct_polish_route_ignores_english_preference(self):
+        self.context.add_init_script('localStorage.setItem("rsd-language-preference", "en")')
+        self.page.goto(BASE_URL + "/pl/")
+        self.assert_page("pl")
+        self.assertEqual(0, self.country_requests)
+        self.assertEqual("en", self.page.evaluate('localStorage.getItem("rsd-language-preference")'))
+
+    def test_storage_denied_still_allows_language_navigation(self):
+        self.context.add_init_script("""for (const name of ['getItem', 'setItem']) {
+            Storage.prototype[name] = () => { throw new DOMException('Storage blocked for test', 'SecurityError'); };
+        }""")
+        self.page.goto(BASE_URL + "/")
+        self.assert_page("en")
+        for language, route in (("pl", "/pl/"), ("en", "/")):
+            self.page.locator(f'[data-language-choice="{language}"]').click()
+            expect(self.page).to_have_url(BASE_URL + route)
+            self.assert_page(language)
+
+    def test_country_service_http_failure_keeps_english_usable(self):
+        self.country_status = 503
+        with self.page.expect_response(lambda response: response.url == "https://api.country.is/" and response.status == 503):
+            self.page.goto(BASE_URL + "/")
+        self.assert_page("en")
+        self.assertEqual(1, self.country_requests)
+        self.assertIsNone(self.page.evaluate('sessionStorage.getItem("rsd-detected-country")'))
+        self.page.locator('.hero-actions a[href="#contact"]').click()
+        expect(self.page).to_have_url(BASE_URL + "/#contact")
 
 
 class ReportResult(unittest.TextTestResult):

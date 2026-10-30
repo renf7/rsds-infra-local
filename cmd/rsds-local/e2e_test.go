@@ -40,10 +40,10 @@ func TestBrowserE2ERequiresExplicitOptIn(t *testing.T) {
 func TestBrowserReportMustProveHeadlessSuccess(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "results.json")
 	for _, report := range []string{
-		`not json`, `{}`, `{"browser":"chromium","headless":true,"tests":0,"passed":true}`,
-		`{"browser":"chromium","headless":true,"tests":6,"failures":1,"passed":true}`,
-		`{"browser":"chromium","headless":false,"tests":6,"passed":true}`,
-		`{"browser":"firefox","headless":true,"tests":6,"passed":true}`,
+		`not json`, `{}`, `{"browser":"chromium","headless":true,"tests":6,"passed":true}`, `{"browser":"chromium","headless":true,"tests":0,"passed":true}`,
+		`{"browser":"chromium","headless":true,"tests":16,"failures":1,"passed":true}`,
+		`{"browser":"chromium","headless":false,"tests":16,"passed":true}`,
+		`{"browser":"firefox","headless":true,"tests":16,"passed":true}`,
 	} {
 		if err := os.WriteFile(path, []byte(report), 0600); err != nil {
 			t.Fatal(err)
@@ -52,10 +52,10 @@ func TestBrowserReportMustProveHeadlessSuccess(t *testing.T) {
 			t.Fatalf("accepted incomplete report: %s", report)
 		}
 	}
-	if err := os.WriteFile(path, []byte(`{"browser":"chromium","headless":true,"tests":6,"passed":true}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"browser":"chromium","headless":true,"tests":16,"passed":true}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if result, err := readBrowserResult(path); err != nil || result.Tests != 6 {
+	if result, err := readBrowserResult(path); err != nil || result.Tests != 16 {
 		t.Fatalf("valid report: %v %v", result, err)
 	}
 	if _, err := readBrowserResult(filepath.Join(t.TempDir(), "missing")); err == nil {

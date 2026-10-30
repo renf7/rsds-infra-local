@@ -57,7 +57,7 @@ func readBrowserResult(path string) (*BrowserResult, error) {
 	if err = json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
-	if !result.Passed || !result.Headless || result.Browser != "chromium" || result.Tests < 6 || result.Errors != 0 || result.Failures != 0 {
+	if !result.Passed || !result.Headless || result.Browser != "chromium" || result.Tests < 16 || result.Errors != 0 || result.Failures != 0 {
 		return &result, errors.New("headless E2E suite failed or returned incomplete results")
 	}
 	return &result, nil
