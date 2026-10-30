@@ -5,7 +5,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -334,5 +337,77 @@ func TestArchiveMissingExecutableAndCorruptTar(t *testing.T) {
 	}
 	if _, err := extractHelm(b.Bytes(), false); err == nil {
 		t.Fatal("corrupt tar accepted")
+	}
+}
+
+type testTransport func(*http.Request) (*http.Response, error)
+
+func (f testTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestChecksumVerifiedBootstrap(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	original := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = original })
+	for _, name := range []string{"kind", "helm"} {
+		payload := []byte("verified executable")
+		if name == "helm" {
+			var b bytes.Buffer
+			if runtime.GOOS == "windows" {
+				w := zip.NewWriter(&b)
+				f, err := w.Create("windows-amd64/helm.exe")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = f.Write(payload); err != nil {
+					t.Fatal(err)
+				}
+				if err = w.Close(); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				gz := gzip.NewWriter(&b)
+				w := tar.NewWriter(gz)
+				if err := w.WriteHeader(&tar.Header{Name: "helm", Size: int64(len(payload)), Mode: 0700, Typeflag: tar.TypeReg}); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := w.Write(payload); err != nil {
+					t.Fatal(err)
+				}
+				if err := w.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if err := gz.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			payload = b.Bytes()
+		}
+		for _, valid := range []bool{true, false} {
+			http.DefaultTransport = testTransport(func(r *http.Request) (*http.Response, error) {
+				body := payload
+				if strings.HasSuffix(r.URL.Path, ".sha256sum") {
+					sum := sha256.Sum256(payload)
+					if !valid {
+						sum = sha256.Sum256([]byte("tampered"))
+					}
+					body = []byte(fmt.Sprintf("%x", sum))
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
+			})
+			path, err := ensureTool(t.TempDir(), name)
+			if !valid {
+				if err == nil {
+					t.Fatal("checksum mismatch accepted")
+				}
+				continue
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil || string(data) != "verified executable" {
+				t.Fatalf("unexpected installed executable %q %v", data, err)
+			}
+		}
 	}
 }
