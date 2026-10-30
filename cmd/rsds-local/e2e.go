@@ -11,12 +11,13 @@ import (
 )
 
 type BrowserResult struct {
-	Browser  string `json:"browser"`
-	Headless bool   `json:"headless"`
-	Tests    int    `json:"tests"`
-	Failures int    `json:"failures"`
-	Errors   int    `json:"errors"`
-	Passed   bool   `json:"passed"`
+	AuthenticationEnabled bool   `json:"authenticationEnabled"`
+	Browser               string `json:"browser"`
+	Headless              bool   `json:"headless"`
+	Tests                 int    `json:"tests"`
+	Failures              int    `json:"failures"`
+	Errors                int    `json:"errors"`
+	Passed                bool   `json:"passed"`
 }
 
 func verifyBrowserE2E(s *State, context string) error {
@@ -37,7 +38,7 @@ func verifyBrowserE2E(s *State, context string) error {
 
 func browserImage(context string) (string, error) {
 	hash := sha256.New()
-	for _, name := range []string{"Dockerfile", "requirements.txt", "test_site.py", ".dockerignore"} {
+	for _, name := range []string{"Dockerfile", "requirements.txt", "test_site.py", "test_auth.py", ".dockerignore"} {
 		data, err := os.ReadFile(filepath.Join(context, name))
 		if err != nil {
 			return "", err
@@ -79,7 +80,7 @@ func runBrowserE2E(s *State, context string) (err error) {
 	// Join only the local kind network and reach this cluster's NodePort directly.
 	container := s.Cluster + "-e2e"
 	// Create separately so an existing container is never removed on a name conflict.
-	if _, err = docker(s, "create", "--name", container, "--network", "kind", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--shm-size", "256m", "--env", "BASE_URL=http://"+s.Cluster+"-control-plane:30080", image); err != nil {
+	if _, err = docker(s, "create", "--name", container, "--network", "kind", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--shm-size", "256m", "--env", "BASE_URL=http://"+s.Cluster+"-control-plane:30080", "--env", fmt.Sprintf("AUTH_E2E=%t", s.AuthEnabled), image); err != nil {
 		return err
 	}
 	defer func() {
@@ -94,6 +95,9 @@ func runBrowserE2E(s *State, context string) (err error) {
 	code, inspectErr := docker(s, "inspect", "--format", "{{.State.ExitCode}}", container)
 	result, reportErr := readBrowserResult(filepath.Join(directory, "results.json"))
 	s.E2E = result
+	if reportErr == nil && s.AuthEnabled && (!result.AuthenticationEnabled || result.Tests < 34) {
+		reportErr = errors.New("authentication E2E suite missing or incomplete")
+	}
 	if err = errors.Join(startErr, logErr, copyErr, inspectErr, reportErr); err != nil {
 		return err
 	}

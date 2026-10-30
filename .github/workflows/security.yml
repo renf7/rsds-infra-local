@@ -14,14 +14,17 @@ concurrency:
   cancel-in-progress: true
 jobs:
   e2e-image:
-    name: Trivy headless browser image
+    name: Trivy local test images
+    strategy:
+      matrix:
+        context: [e2e, test-idp]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
       - name: Build local-only browser test image
-        run: docker build --pull -t rsds-local/e2e:security e2e
+        run: docker build --pull -t rsds-local/e2e:security ${{ matrix.context }}
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           version: v0.76.1

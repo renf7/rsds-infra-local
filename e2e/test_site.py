@@ -263,8 +263,14 @@ class ReportResult(unittest.TextTestResult):
 if __name__ == "__main__":
     ARTIFACTS.mkdir(exist_ok=True)
     ReportResult.suite = ET.Element("testsuite", name="headless-chromium")
-    result = unittest.TextTestRunner(verbosity=2, resultclass=ReportResult).run(unittest.defaultTestLoader.loadTestsFromTestCase(SiteTests))
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(SiteTests)
+    auth_enabled = os.environ.get('AUTH_E2E') == 'true'
+    if auth_enabled:
+        from test_auth import AuthenticationTests
+        suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(AuthenticationTests))
+    result = unittest.TextTestRunner(verbosity=2, resultclass=ReportResult).run(suite)
     summary = {"browser": "chromium", "headless": True, "tests": result.testsRun, "failures": len(result.failures), "errors": len(result.errors), "passed": result.wasSuccessful() and result.testsRun > 0}
+    summary['authenticationEnabled'] = auth_enabled
     ReportResult.suite.attrib.update(tests=str(result.testsRun), failures=str(len(result.failures)), errors=str(len(result.errors)))
     ET.ElementTree(ReportResult.suite).write(ARTIFACTS / "junit.xml", encoding="utf-8", xml_declaration=True)
     (ARTIFACTS / "results.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")

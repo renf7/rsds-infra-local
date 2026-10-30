@@ -50,12 +50,16 @@ jobs:
           out/rsds-local up --docker-context default --workdir .local-pr --cluster rsds-local-ci-pr --port 18081 --pr rsds-infra-helm=4 --pr rsds-infra-company-page=9 --e2e
           out/rsds-local status --workdir .local-pr
           out/rsds-local down --workdir .local-pr
+          out/rsds-local up --docker-context default --manifest local-test-auth.json --workdir .local-auth --cluster rsds-local-ci-auth --port 18082 --pr rsds-infra-company-page=17 --pr rsds-infra-helm=9 --pr rsds-infra-auth-service=1 --pr rsds-infra-local=1 --e2e
+          out/rsds-local status --workdir .local-auth
+          out/rsds-local down --workdir .local-auth
           go tool covdata textfmt -i=coverage-data -o=coverage.out
       - name: Clean up only runner-owned test clusters
         if: ${{ always() }}
         run: |
           test ! -f .local-main/state.json || out/rsds-local down --docker-context default --workdir .local-main
           test ! -f .local-pr/state.json || out/rsds-local down --docker-context default --workdir .local-pr
+          test ! -f .local-auth/state.json || out/rsds-local down --workdir .local-auth
       - name: Retain provenance reports without kubeconfig credentials
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -69,6 +73,8 @@ jobs:
             .local-pr/runs/*/pods.json
             .local-main/runs/*/e2e/
             .local-pr/runs/*/e2e/
+            .local-auth/runs/*/report.json
+            .local-auth/runs/*/e2e/
             coverage.out
       - name: Validate connection configuration
         shell: bash

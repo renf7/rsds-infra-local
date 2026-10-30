@@ -52,9 +52,10 @@ type Check struct {
 	ImageFile  string `json:"imageFile,omitempty"`
 }
 type Manifest struct {
-	Chart  Chart   `json:"chart"`
-	Images []Image `json:"images"`
-	Checks []Check `json:"checks"`
+	Authentication bool    `json:"authentication,omitempty"`
+	Chart          Chart   `json:"chart"`
+	Images         []Image `json:"images"`
+	Checks         []Check `json:"checks"`
 }
 type Source struct {
 	Repository string `json:"repository"`
@@ -72,6 +73,7 @@ type Result struct {
 	SourceMatches bool   `json:"sourceMatches"`
 }
 type State struct {
+	AuthEnabled   bool               `json:"authenticationEnabled"`
 	Owner         string             `json:"owner"`
 	Cluster       string             `json:"cluster"`
 	DockerContext string             `json:"dockerContext"`
@@ -327,6 +329,7 @@ func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool)
 		return e
 	}
 	s.E2EEnabled = e2e
+	s.AuthEnabled = m.Authentication
 	s.Kubeconfig = filepath.Join(s.RunDirectory, "kubeconfig")
 	if e = localDocker(s); e != nil {
 		return e
@@ -415,10 +418,18 @@ func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool)
 		}
 	}
 	chart := filepath.Join(s.Sources[m.Chart.Repository].Directory, m.Chart.Path)
+	if s.AuthEnabled {
+		if e = prepareAuthStack(s); e != nil {
+			return e
+		}
+	}
 	helmArgs := []string{"upgrade", "--install", "rsds-local", chart, "--kubeconfig", s.Kubeconfig, "--kube-context", "kind-" + cluster, "--namespace", "rsds-local-test", "--create-namespace", "--set", "ingress.enabled=false", "--set", "fullnameOverride=rsds-local", "--set", "service.type=NodePort", "--wait", "--timeout", "120s"}
 	for _, im := range m.Images {
 		tag := s.Sources[im.Repository].Commit[:12]
 		helmArgs = append(helmArgs, "--set", im.ValuesPrefix+".repository=rsds-local/"+im.Repository, "--set", im.ValuesPrefix+".tag="+tag, "--set", im.ValuesPrefix+".pullPolicy=Never")
+	}
+	if s.AuthEnabled {
+		helmArgs = append(helmArgs, "--set", "auth.enabled=true", "--set", "auth.local=true", "--set", "dynamodb.enabled=true", "--set", "idp.enabled=true", "--set", "auth.signingSecretName=rsds-local-auth-signing", "--set", "auth.trustSecretName=rsds-local-auth-trust")
 	}
 	if _, e = run("", nil, helm, helmArgs...); e != nil {
 		return e

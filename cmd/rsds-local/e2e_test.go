@@ -68,7 +68,7 @@ func TestBrowserImageTracksTestInputs(t *testing.T) {
 	if _, err := browserImage(root); err == nil {
 		t.Fatal("accepted missing E2E source")
 	}
-	for _, name := range []string{"Dockerfile", "requirements.txt", "test_site.py", ".dockerignore"} {
+	for _, name := range []string{"Dockerfile", "requirements.txt", "test_site.py", "test_auth.py", ".dockerignore"} {
 		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0600); err != nil {
 			t.Fatal(err)
 		}
