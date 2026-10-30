@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -264,5 +265,74 @@ func TestManagedStateAndCachedTool(t *testing.T) {
 	}
 	if got, err := ensureTool(root, "kind"); err != nil || got != path {
 		t.Fatalf("cached tool %s %v", got, err)
+	}
+}
+
+func TestStartupRejectsUnknownSourcesAndMissingTools(t *testing.T) {
+	manifest, err := filepath.Abs("../../local-test.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := up(manifest, t.TempDir(), "default", "rsds-local-test", 18080, overrides{"rsds-infra-unknown": 1}); err == nil || !strings.Contains(err.Error(), "not in the manifest") {
+		t.Fatalf("unknown source: %v", err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	if err := up(manifest, t.TempDir(), "default", "rsds-local-test", 18080, nil); err == nil || !strings.Contains(err.Error(), "install docker") {
+		t.Fatalf("missing prerequisite: %v", err)
+	}
+	if _, err := run("", nil, "git", "--version"); err == nil {
+		t.Fatal("missing executable accepted")
+	}
+	root := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(root, []byte("file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ensureTool(root, "kind"); err == nil {
+		t.Fatal("invalid tool cache accepted")
+	}
+}
+
+func TestHTTPReadinessRetry(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests.Add(1) == 1 {
+			http.Error(w, "starting", 503)
+			return
+		}
+		_, _ = w.Write([]byte("ready"))
+	}))
+	defer server.Close()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("ready"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := &State{URL: server.URL, Sources: map[string]*Source{"rsds-infra-company-page": {Directory: root}}}
+	if _, err := checkHTTP(s, Check{"/", "rsds-infra-company-page", "index.html"}); err != nil {
+		t.Fatal(err)
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("expected readiness retry: %d", requests.Load())
+	}
+}
+
+func TestArchiveMissingExecutableAndCorruptTar(t *testing.T) {
+	var b bytes.Buffer
+	zw := zip.NewWriter(&b)
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := extractHelm(b.Bytes(), true); err == nil {
+		t.Fatal("empty archive accepted")
+	}
+	b.Reset()
+	gz := gzip.NewWriter(&b)
+	if _, err := gz.Write(bytes.Repeat([]byte("invalid"), 100)); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := extractHelm(b.Bytes(), false); err == nil {
+		t.Fatal("corrupt tar accepted")
 	}
 }
