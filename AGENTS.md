@@ -1,5 +1,7 @@
 # Agent instructions
 
+Before running local validation, follow README.md sections "Reproduce the successful local run" and "Troubleshooting without losing evidence". They document the tested Docker/cgroup workaround, context selection for builds, isolated workdirs/ports, stale-binary handling, evidence requirements and owned-state cleanup. Keep the human/agent runbook current when changing those behaviors.
+
 This Go repository is part of renf7's rsds-infra family. Read the canonical standard at https://github.com/renf7/rsds-infra-helm/blob/main/docs/security/REPOSITORY-STANDARD.md (until merged, Helm PR #4 / branch RSDSINFRA-24-security-scanning).
 
 Keep free CodeQL Go/Actions, Semgrep CE, Trivy, dependency checks, SonarCloud quality gate, Dependabot and secret protection requirements. Trigger applicable checks on every PR commit/force-push and opened/reopened/edited/ready_for_review event. No paid tiers, token leaks, blanket exclusions or weakened gates. This repository will remain Go and tooling only: omit Java and React scanners, including SpotBugs/Find Security Bugs and React ESLint plugins. Maintain locked versions and SHA-pinned Actions. Read SCANNER-VERSIONS.md for applicability and verified native settings.
