@@ -1,0 +1,168 @@
+name: Local validation and SonarQube Cloud
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '47 6 * * 2'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sonar-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  analyze:
+    name: Sonar analysis and quality gate
+    # Validate repository configuration inside the job so missing settings fail visibly.
+    # Fork PRs do not receive SONAR_TOKEN; never use pull_request_target to expose it.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_PROJECT_KEY: ${{ github.event.repository.name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: '1.26'
+          cache: false
+      - name: Build and validate both source selection modes
+        env:
+          GOCOVERDIR: ${{ github.workspace }}/coverage-data
+        run: |
+          set -euo pipefail
+          mkdir -p coverage-data out
+          go test -covermode=atomic -coverprofile=coverage-unit.out ./... -args -test.gocoverdir="$GOCOVERDIR"
+          go vet ./...
+          go build -cover -covermode=atomic -o out/rsds-local ./cmd/rsds-local
+          out/rsds-local up --docker-context default --workdir .local-main --cluster rsds-local-ci-main --port 18080
+          out/rsds-local status --workdir .local-main
+          out/rsds-local down --workdir .local-main
+          out/rsds-local up --docker-context default --workdir .local-pr --cluster rsds-local-ci-pr --port 18081 --pr rsds-infra-helm=4 --pr rsds-infra-company-page=9
+          out/rsds-local status --workdir .local-pr
+          out/rsds-local down --workdir .local-pr
+          go tool covdata textfmt -i=coverage-data -o=coverage.out
+      - name: Clean up only runner-owned test clusters
+        if: ${{ always() }}
+        run: |
+          test ! -f .local-main/state.json || out/rsds-local down --docker-context default --workdir .local-main
+          test ! -f .local-pr/state.json || out/rsds-local down --docker-context default --workdir .local-pr
+      - name: Retain provenance reports without kubeconfig credentials
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: local-validation-evidence
+          retention-days: 7
+          path: |
+            .local-main/runs/*/report.json
+            .local-main/runs/*/pods.json
+            .local-pr/runs/*/report.json
+            .local-pr/runs/*/pods.json
+            coverage.out
+      - name: Validate connection configuration
+        shell: bash
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::Missing SONAR_TOKEN repository Actions secret. Store the token in Secrets, not Variables. No token value is logged."
+            exit 1
+          fi
+          test -n "$SONAR_PROJECT_KEY" || { echo 'Repository name is unavailable'; exit 1; }
+      - name: Ensure existing Sonar project is public
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          python - <<'PY'
+          import base64, json, os, urllib.error, urllib.parse, urllib.request
+          if os.environ["REPOSITORY_PRIVATE"].lower() != "false":
+              raise SystemExit("Refusing to publish analysis for a non-public GitHub repository")
+          base = "https://sonarcloud.io"
+          key = os.environ["SONAR_PROJECT_KEY"]
+          auth = base64.b64encode((os.environ["SONAR_TOKEN"] + ":").encode()).decode()
+          headers = {"Authorization": "Basic " + auth}
+          url = base + "/api/components/show?" + urllib.parse.urlencode({"component": key})
+          try:
+              with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
+                  component = json.load(response)["component"]
+          except urllib.error.HTTPError as error:
+              if error.code == 404:
+                  print("Project not found; scanner will request public visibility on creation")
+                  raise SystemExit(0)
+              raise SystemExit("Sonar project lookup failed with HTTP " + str(error.code))
+          if component.get("visibility") == "public":
+              print("Sonar project is already public")
+          else:
+              data = urllib.parse.urlencode({"project": key, "visibility": "public"}).encode()
+              request = urllib.request.Request(base + "/api/projects/update_visibility", data=data, headers=headers)
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      print("Sonar project changed to public")
+              except urllib.error.HTTPError as error:
+                  raise SystemExit("Cannot set public visibility (HTTP " + str(error.code) + "). A project administrator must set Administration > Permissions > Public; do not grant a broad token just for CI.")
+          PY
+      - name: Analyze and wait for the quality gate
+        uses: SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304
+        with:
+          args: >
+            -Dsonar.projectKey=${{ github.event.repository.name }}
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+      - name: Verify public visibility after first analysis
+        if: ${{ always() && env.SONAR_TOKEN != '' }}
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          python - <<'PY'
+          import base64, json, os, urllib.error, urllib.parse, urllib.request
+          if os.environ["REPOSITORY_PRIVATE"].lower() != "false":
+              raise SystemExit("Refusing to publish analysis for a non-public GitHub repository")
+          base = "https://sonarcloud.io"
+          key = os.environ["SONAR_PROJECT_KEY"]
+          auth = base64.b64encode((os.environ["SONAR_TOKEN"] + ":").encode()).decode()
+          headers = {"Authorization": "Basic " + auth}
+          url = base + "/api/components/show?" + urllib.parse.urlencode({"component": key})
+          try:
+              with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
+                  component = json.load(response)["component"]
+          except urllib.error.HTTPError as error:
+              if error.code == 404:
+                  print("Project not found; scanner will request public visibility on creation")
+                  raise SystemExit(0)
+              raise SystemExit("Sonar project lookup failed with HTTP " + str(error.code))
+          if component.get("visibility") == "public":
+              print("Sonar project is already public")
+          else:
+              data = urllib.parse.urlencode({"project": key, "visibility": "public"}).encode()
+              request = urllib.request.Request(base + "/api/projects/update_visibility", data=data, headers=headers)
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      print("Sonar project changed to public")
+              except urllib.error.HTTPError as error:
+                  raise SystemExit("Cannot set public visibility (HTTP " + str(error.code) + "). A project administrator must set Administration > Permissions > Public; do not grant a broad token just for CI.")
+          PY
+      - name: Report quality gate conditions
+        if: ${{ always() && env.SONAR_TOKEN != '' }}
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python - <<'PY'
+          import base64, json, os, urllib.parse, urllib.request
+          params = {"projectKey": os.environ["SONAR_PROJECT_KEY"]}
+          if os.environ.get("PR_NUMBER"):
+              params["pullRequest"] = os.environ["PR_NUMBER"]
+          auth = base64.b64encode((os.environ["SONAR_TOKEN"] + ":").encode()).decode()
+          request = urllib.request.Request("https://sonarcloud.io/api/qualitygates/project_status?" + urllib.parse.urlencode(params), headers={"Authorization": "Basic " + auth})
+          with urllib.request.urlopen(request, timeout=30) as response:
+              status = json.load(response)["projectStatus"]
+          print("Quality gate:", status["status"])
+          for condition in status.get("conditions", []):
+              print(condition["metricKey"], "status=" + condition["status"], "actual=" + condition.get("actualValue", "n/a"), "threshold=" + condition.get("errorThreshold", "n/a"))
+          PY

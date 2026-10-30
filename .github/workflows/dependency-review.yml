@@ -1,0 +1,28 @@
+name: Dependency vulnerability scan
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+permissions:
+  contents: read
+concurrency:
+  group: dependency-scan-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  review:
+    name: PR dependency vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      # Scan all dependency manifests/lockfiles; GitHub Dependency Graph is not required.
+      # Native dependency-review-action is unavailable until Dependency Graph is enabled.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          version: v0.76.1
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: false

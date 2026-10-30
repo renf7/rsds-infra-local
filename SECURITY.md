@@ -1,0 +1,7 @@
+# Security and local-only operation
+
+Use only trusted PR code. The CLI requires a local Docker endpoint, creates a dedicated kind cluster/private kubeconfig and binds HTTP to loopback. It does not use AWS/prod credentials or change your global Kubernetes configuration. Never commit .local* directories or kubeconfig/state credentials. The Docker socket is used by the host CLI, not mounted into the application.
+
+Scanners are configured per AGENTS.md. Go uses standard-library dependencies only; frontend/Java-only scanners are not applicable. Configure a least-privilege SONAR_TOKEN Actions secret and public project rsds-infra-local in SonarCloud organization renf7. Fork PRs do not get the token. Missing Sonar configuration is a visible failure, not a green skipped scan. The workflow verifies default and PR modes before analysis and records real unit/integration coverage without changing the gate. Enable native GitHub secret protection/Dependabot alerts and required checks separately; committing YAML does not prove those admin settings are enabled.
+
+Tool downloads use official release endpoints and SHA256 sidecars; Go compiler image uses the supported 1.26 series. Application images are built locally from exact selected commits. No image is pushed, and production is never deployed. Control-plane image is pinned to kindest/node:v1.34.0 for the tested Docker Desktop compatibility; this is not a recommendation for a production Kubernetes upgrade policy.
