@@ -30,3 +30,5 @@ Upstream references:
 - https://github.com/SonarSource/sonarqube-scan-action/releases/tag/v8.4.0
 
 CodeQL bundle tags are separate from Action releases; do not replace an Action pin with a codeql-bundle tag. Dependabot proposes version changes; review upstream release notes and compatibility before updating pins. Keep the Sonar coverage threshold and security gates intact.
+
+Authentication integration adds a second built-image scan for test-idp and pip/Docker Dependabot coverage. Its Python runtime is updated to 3.15.2 (latest stable verified at https://www.python.org/downloads/ on 30 October 2026), with cryptography 50.0.2. Runtime packaging tools are removed after installation: Trivy identified vulnerable vendored msgpack/urllib3 in unused pip/ensurepip. Neither the image nor findings are excluded from scanning. The local provider fixture receives public Apple client trust only.
