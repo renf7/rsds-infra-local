@@ -77,3 +77,9 @@ func TestExtractOnlyExecutable(t *testing.T) {
 		t.Fatalf("extract: %s %v", out, e)
 	}
 }
+
+func TestRunRejectsUnapprovedExecutable(t *testing.T) {
+	if _, err := run("", nil, "unapproved-command"); err == nil {
+		t.Fatal("expected executable allowlist rejection")
+	}
+}

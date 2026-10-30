@@ -230,9 +230,18 @@ func safeRelative(p string) bool {
 	return true
 }
 func run(dir string, env []string, command string, args ...string) (string, error) {
+	name := strings.TrimSuffix(filepath.Base(command), ".exe")
+	switch name {
+	case "git", "docker", "kubectl", "kind", "helm":
+	default:
+		return "", errors.New("executable is not an approved local testing tool")
+	}
 	fmt.Println("+", filepath.Base(command), strings.Join(args, " "))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
+	// Approved tools only, resolved from the user's PATH or checksum-verified downloads.
+	// Arguments remain separate; no shell interprets repository names or PR input.
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
