@@ -40,6 +40,9 @@ class AuthenticationTests(unittest.TestCase):
         self.page.on('pageerror', lambda error: self.errors.append(str(error)))
 
     def tearDown(self):
+        field = self.page.locator('#auth-verification')
+        if field.count() and field.is_visible():
+            field.fill('')  # Never retain a submitted one-time code in a failure screenshot.
         self.page.screenshot(path=str(ARTIFACTS / (self._testMethodName + '.png')), full_page=True)
         self.context.close()
         self.assertFalse(self.errors, 'Browser runtime errors')
