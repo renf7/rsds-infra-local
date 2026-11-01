@@ -8,6 +8,8 @@ import json
 import os
 from pathlib import Path
 import time
+import re
+import uuid
 import unittest
 import xml.etree.ElementTree as ET
 from playwright.sync_api import expect, sync_playwright
@@ -42,14 +44,39 @@ class AuthenticationTests(unittest.TestCase):
         self.context.close()
         self.assertFalse(self.errors, 'Browser runtime errors')
 
-    def login(self, provider='google', choice='Continue as Alice', route='/'):
+    def login(self, provider='google', choice='Continue as Alice', route='/', complete=True):
         self.page.goto(BASE_URL + route)
         self.page.get_by_role('button', name='Zaloguj się' if route.startswith('/pl/') else 'Log in', exact=True).click()
         dialog = self.page.get_by_role('dialog')
         expect(dialog).to_be_visible()
-        dialog.get_by_role('link', name=LABELS.get(provider, provider.capitalize()), exact=True).click()
+        dialog.get_by_role('link', name=('Kontynuuj z ' if route.startswith('/pl/') else 'Continue with ') + LABELS.get(provider, provider.capitalize()), exact=True).click()
         expect(self.page.get_by_role('heading', name=f'Local {provider} identity provider')).to_be_visible()
         self.page.get_by_role('button', name=choice, exact=True).click()
+        if complete:
+            expect(self.page).to_have_url(re.compile(r'.*[?&]login=(success|verify|failed)'))
+            if 'login=verify' in self.page.url:
+                self.complete_email_verification(polish=route.startswith('/pl/'))
+
+    def latest_code(self):
+        # Local SMTP fixture only: never write message bodies/codes into reports or traces.
+        for _ in range(30):
+            response = self.context.request.get(BASE_URL + '/__test/mail/api/v1/messages')
+            if response.ok:
+                messages = response.json().get('messages', [])
+                if messages:
+                    detail = self.context.request.get(BASE_URL + '/__test/mail/api/v1/message/' + messages[0]['ID']).json()
+                    match = re.search(r'code is: ([0-9]{6})', detail.get('Text', ''))
+                    if match:
+                        return match.group(1)
+            time.sleep(0.1)
+        raise AssertionError('No verification message delivered to the local SMTP sink')
+
+    def complete_email_verification(self, polish=False):
+        field = self.page.get_by_label('Kod weryfikacyjny' if polish else 'Verification code', exact=True)
+        expect(field).to_be_visible()
+        field.fill(self.latest_code())
+        self.page.get_by_role('button', name='Potwierdź i kontynuuj' if polish else 'Verify and continue', exact=True).click()
+        expect(self.page.get_by_role('button', name='Wyloguj' if polish else 'Log out', exact=True)).to_be_visible()
 
     def access_cookie(self):
         cookies = self.context.cookies()
@@ -75,7 +102,7 @@ class AuthenticationTests(unittest.TestCase):
         response = self.context.request.get(BASE_URL + '/api/auth/me')
         self.assertEqual(response.status, 200, 'The backend must verify the actual signed JWT')
         identity = response.json()
-        self.assertEqual(identity['provider'], provider)
+        self.assertTrue(identity['email'])
         self.assertEqual(identity['subject'], claims['sub'])
         self.page.reload()
         expect(self.page.get_by_role('button', name='Wyloguj' if language == 'pl' else 'Log out', exact=True)).to_be_visible()
@@ -92,7 +119,7 @@ class AuthenticationTests(unittest.TestCase):
         dialog = self.page.get_by_role('dialog')
         expect(dialog).to_be_visible()
         for provider in PROVIDERS:
-            expect(dialog.get_by_role('link', name=LABELS.get(provider, provider.capitalize()), exact=True)).to_be_visible()
+            expect(dialog.get_by_role('link', name='Continue with ' + LABELS.get(provider, provider.capitalize()), exact=True)).to_be_visible()
         for _ in range(10):
             self.page.keyboard.press('Tab')
             self.assertTrue(dialog.evaluate('element => element.contains(document.activeElement)'), 'Modal must retain keyboard focus')
@@ -147,6 +174,65 @@ class AuthenticationTests(unittest.TestCase):
         self.context.add_cookies([current])
         self.assertEqual(self.context.request.post(BASE_URL + '/api/auth/refresh', headers=self.csrf()).status, 401)
 
+    def test_same_verified_email_across_all_providers_uses_one_internal_account(self):
+        subjects = set()
+        for provider in PROVIDERS:
+            self.context.clear_cookies()
+            self.login(provider)
+            response = self.context.request.get(BASE_URL + '/api/auth/me')
+            self.assertEqual(response.status, 200)
+            identity = response.json()
+            self.assertEqual(identity['email'], 'alice@example.test')
+            subjects.add(identity['subject'])
+        self.assertEqual(len(subjects), 1)
+
+    def test_unverified_email_requires_delivered_code_before_any_jwt(self):
+        self.login('google', 'Continue with unverified email', complete=False)
+        expect(self.page.get_by_label('Verification code', exact=True)).to_be_visible()
+        self.assertFalse(any(c['name'] == 'RSDS_ACCESS' for c in self.context.cookies()))
+        self.assertEqual(self.context.request.get(BASE_URL + '/api/auth/me').status, 401)
+        self.assertEqual(self.context.request.post(BASE_URL + '/api/auth/verify-email', data={'code': '000000'}).status, 403)
+        self.page.get_by_label('Verification code', exact=True).fill('000000')
+        # Avoid a probabilistic wrong-code test: use a deterministic different value.
+        correct = self.latest_code()
+        wrong = '111111' if correct != '111111' else '222222'
+        self.page.get_by_label('Verification code', exact=True).fill(wrong)
+        self.page.get_by_role('button', name='Verify and continue', exact=True).click()
+        expect(self.page.get_by_role('alert')).to_contain_text('Invalid or expired code')
+        self.assertFalse(any(c['name'] == 'RSDS_ACCESS' for c in self.context.cookies()))
+        self.complete_email_verification()
+        self.assert_authenticated('google')
+        replay = self.context.request.post(BASE_URL + '/api/auth/verify-email', headers=self.csrf(), data={'code': correct})
+        self.assertEqual(replay.status, 400)
+
+    def test_missing_email_can_be_verified_after_provider_authentication(self):
+        self.login('github', 'Continue without email', complete=False)
+        expect(self.page.get_by_label('Email', exact=True)).to_be_visible()
+        email = 'missing-' + uuid.uuid4().hex + '@example.test'
+        self.page.get_by_label('Email', exact=True).fill(email)
+        self.page.get_by_role('button', name='Send code', exact=True).click()
+        self.complete_email_verification()
+        self.assertEqual(self.context.request.get(BASE_URL + '/api/auth/me').json()['email'], email)
+
+    def test_bound_provider_email_change_keeps_the_internal_account(self):
+        self.login('google')
+        original = self.context.request.get(BASE_URL + '/api/auth/me').json()
+        self.context.clear_cookies()
+        self.login('google', 'Continue as Alice with changed email')
+        identity = self.context.request.get(BASE_URL + '/api/auth/me').json()
+        self.assertEqual(identity['subject'], original['subject'])
+        self.assertEqual(identity['email'], original['email'])
+
+    def test_apple_private_relay_is_a_distinct_email_account(self):
+        self.login('google')
+        original = self.context.request.get(BASE_URL + '/api/auth/me').json()
+        self.context.clear_cookies()
+        self.login('apple', 'Continue with Apple relay')
+        identity = self.context.request.get(BASE_URL + '/api/auth/me').json()
+        self.assertEqual(identity['email'], 'alice@privaterelay.appleid.com')
+        self.assertNotEqual(identity['subject'], original['subject'])
+
+
 
 def successful_login(provider):
     def test(self):
@@ -174,7 +260,7 @@ for provider in ['google', 'microsoft', 'apple']:
 if __name__ == '__main__':
     ARTIFACTS.mkdir(exist_ok=True)
     result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(AuthenticationTests))
-    summary = {'browser': 'chromium', 'headless': True, 'tests': result.testsRun, 'failures': len(result.failures), 'errors': len(result.errors), 'passed': result.wasSuccessful() and result.testsRun >= 20, 'providerBoundary': 'local-protocol-fixture'}
+    summary = {'browser': 'chromium', 'headless': True, 'tests': result.testsRun, 'failures': len(result.failures), 'errors': len(result.errors), 'passed': result.wasSuccessful() and result.testsRun >= 25, 'providerBoundary': 'local-protocol-fixture'}
     (ARTIFACTS / 'auth-results.json').write_text(json.dumps(summary, indent=2))
     suite = ET.Element('testsuite', tests=str(result.testsRun), failures=str(len(result.failures)), errors=str(len(result.errors)))
     for test, detail in result.failures + result.errors:

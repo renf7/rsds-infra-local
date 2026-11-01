@@ -25,8 +25,10 @@ These tests cover current static behavior. They do not claim pixel-perfect visua
 
 ## Optional authentication integration
 
-Select `--manifest local-test-auth.json --e2e` and the four matching PR overrides documented in the root README. This runs 36 headless tests: the 16 existing marketing behavior tests plus 20 authentication tests. Authentication remains disabled in the default manifest; browser tests always require the explicit flag.
+Select `--manifest local-test-auth.json --e2e` and the four matching PR overrides documented in the root README. This runs 41 headless tests: the 16 existing marketing behavior tests plus 25 authentication tests. Authentication remains disabled in the default manifest; browser tests always require the explicit flag.
 
 All five provider flows traverse the real browser, Spring Security callback, real DynamoDB Local adapter, signed JWT cookie and authenticated API. The local provider fixture replaces only external OAuth/OIDC endpoints. It checks state-bound one-use authorization codes, redirects, nonce, supported PKCE and Apple's real ES256 client-secret signature using a public key only. Tests cover consent denial, invalid OIDC signatures, forged state, tampered JWTs, CSRF, logout, refresh replay, Polish return navigation and the signed-in 320px header.
 
 Reports explicitly identify `identityProviderMode=local-protocol-fixture`. No live provider accounts or app registrations are used, so this is not proof of live-provider interoperability, consent policies or MFA. Authentication traces are omitted to avoid recording credentials; screenshots, JSON and JUnit remain. Never upload generated signing keys, kubeconfigs, JWTs or cookies.
+
+Account onboarding now adds five scenarios (41 total /25 auth), using actual local SMTP capture. Microsoft/Facebook's first binding and any missing/unverified email require a code. GitHub's fixture intentionally hides public email and requires authenticated /emails with user:email scope. The same verified email across providers must yield the same internal subject. An upstream changed email cannot move an existing provider binding; an Apple relay address stays a distinct email key. Code values are never included in reports/screenshots/traces.

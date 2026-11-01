@@ -96,7 +96,7 @@ func runBrowserE2E(s *State, context string) (err error) {
 	code, inspectErr := docker(s, "inspect", "--format", "{{.State.ExitCode}}", container)
 	result, reportErr := readBrowserResult(filepath.Join(directory, "results.json"))
 	s.E2E = result
-	if reportErr == nil && s.AuthEnabled && (!result.AuthenticationEnabled || result.Tests < 36 || result.IdentityProviderMode != "local-protocol-fixture") {
+	if reportErr == nil && s.AuthEnabled && (!result.AuthenticationEnabled || result.Tests < 41 || result.IdentityProviderMode != "local-protocol-fixture") {
 		reportErr = errors.New("authentication E2E suite missing or incomplete")
 	}
 	if err = errors.Join(startErr, logErr, copyErr, inspectErr, reportErr); err != nil {

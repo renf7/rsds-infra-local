@@ -443,7 +443,7 @@ func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool)
 		helmArgs = append(helmArgs, "--set", im.ValuesPrefix+".repository=rsds-local/"+im.Repository, "--set", im.ValuesPrefix+".tag="+tag, "--set", im.ValuesPrefix+".pullPolicy=Never")
 	}
 	if s.AuthEnabled {
-		helmArgs = append(helmArgs, "--set", "auth.enabled=true", "--set", "auth.local=true", "--set", "dynamodb.enabled=true", "--set", "idp.enabled=true", "--set", "auth.signingSecretName=rsds-local-auth-signing", "--set", "auth.trustSecretName=rsds-local-auth-trust", "--set", "idp.clientTrustSecretName=rsds-local-idp-client-trust")
+		helmArgs = append(helmArgs, "--set", "auth.enabled=true", "--set", "auth.local=true", "--set", "dynamodb.enabled=true", "--set", "mailpit.enabled=true", "--set", "idp.enabled=true", "--set", "auth.signingSecretName=rsds-local-auth-signing", "--set", "auth.trustSecretName=rsds-local-auth-trust", "--set", "idp.clientTrustSecretName=rsds-local-idp-client-trust")
 	}
 	if _, e = run("", nil, helm, helmArgs...); e != nil {
 		return e

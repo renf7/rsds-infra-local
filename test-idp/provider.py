@@ -61,9 +61,11 @@ def encoded(value):
 def jwt(provider, request, invalid):
     now = int(time.time())
     header = encoded({'alg': 'RS256', 'kid': provider + '-fixture', 'typ': 'JWT'})
-    claims = encoded({'iss': ISSUER + '/' + provider, 'sub': 'alice-subject', 'aud': request['client_id'],
+    profile = request.get('fixture_profile', {'sub': 'alice-subject', 'email': 'alice@example.test', 'email_verified': True})
+    claims = encoded({'iss': ISSUER + '/' + provider, 'sub': profile['sub'], 'aud': request['client_id'],
                       'iat': now, 'exp': now + 120, 'nonce': request['nonce'], 'name': 'Alice',
-                      'email': 'alice@example.test', 'email_verified': True, 'roles': ['ADMIN', 'JOB_REPLY']})
+                      'email': profile.get('email'), 'email_verified': profile.get('email_verified', False),
+                      'hd': 'example.test' if profile.get('email_verified') else None, 'roles': ['ADMIN', 'JOB_REPLY']})
     message = (header + '.' + claims).encode()
     key = INVALID_KEY if invalid else KEYS[provider]
     return message.decode() + '.' + b64(key.sign(message, padding.PKCS1v15(), hashes.SHA256()))
@@ -103,13 +105,20 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {'keys': [{'kty': 'RSA', 'use': 'sig', 'alg': 'RS256', 'kid': provider + '-fixture',
                                            'n': b64(public.n.to_bytes((public.n.bit_length() + 7) // 8, 'big')),
                                            'e': b64(public.e.to_bytes((public.e.bit_length() + 7) // 8, 'big'))}]})
-        if endpoint == 'userinfo':
+        if endpoint in {'userinfo', 'emails'}:
             token = self.headers.get('Authorization', '').removeprefix('Bearer ')
             with LOCK:
                 owner = TOKENS.get(token)
-            if owner != provider:
+            if not owner or owner['provider'] != provider:
                 return self.send(401, {'error': 'invalid_token'})
-            return self.send(200, {'sub': 'alice-subject', 'id': 'alice-subject', 'name': 'Alice', 'roles': ['ADMIN']})
+            profile = owner['profile']
+            if endpoint == 'emails':
+                if provider != 'github' or 'user:email' not in owner['scope'].split():
+                    return self.send(403, {'error': 'missing_email_scope'})
+                return self.send(200, [{'email': profile.get('email'), 'primary': True, 'verified': profile.get('email_verified', False)}])
+            # GitHub's public email is deliberately absent: the backend must load /emails.
+            return self.send(200, {'sub': profile['sub'], 'id': profile['sub'], 'name': 'Alice',
+                                   'email': None if provider == 'github' else profile.get('email'), 'roles': ['ADMIN']})
         if endpoint != 'authorize':
             return self.send(404, {'error': 'not_found'})
         callback = urlsplit(query.get('redirect_uri', ''))
@@ -131,7 +140,9 @@ class Handler(BaseHTTPRequestHandler):
             CODES['request:' + request_id] = (provider, query, time.time())
         form = '<input type="hidden" name="request" value="' + html.escape(request_id, quote=True) + '">'
         buttons = ''.join('<button name="choice" value="' + value + '">' + label + '</button>' for value, label in
-                          [('allow', 'Continue as Alice'), ('deny', 'Deny consent'), ('invalid', 'Invalid token signature')])
+                          [('allow', 'Continue as Alice'), ('deny', 'Deny consent'), ('invalid', 'Invalid token signature'),
+                           ('unverified', 'Continue with unverified email'), ('missing', 'Continue without email'),
+                           ('changed', 'Continue as Alice with changed email'), ('relay', 'Continue with Apple relay')])
         self.send(200, '<!doctype html><html lang="en"><head><title>Local protocol fixture</title></head><body><h1>Local ' +
                   provider + ' identity provider</h1><p>Test fixture only; no real provider account is used.</p><form method="post" action="/__test/idp/' +
                   provider + '/decision">' + form + buttons + '</form></body></html>', 'text/html')
@@ -151,6 +162,18 @@ class Handler(BaseHTTPRequestHandler):
             if not item or item[0] != provider or time.time() - item[2] > 120:
                 return self.send(400, {'error': 'expired_request'})
             _, request, _ = item
+            choice = fields.get('choice', '')
+            suffix = hashlib.sha256(request['state'].encode()).hexdigest()[:16]
+            profile = {'sub': 'alice-subject', 'email': 'alice@example.test', 'email_verified': True}
+            if choice == 'unverified':
+                profile = {'sub': 'unverified-' + suffix, 'email': 'verify-' + suffix + '@example.test', 'email_verified': False}
+            elif choice == 'missing':
+                profile = {'sub': 'missing-' + suffix}
+            elif choice == 'changed':
+                profile['email'] = 'changed@example.test'
+            elif choice == 'relay':
+                profile = {'sub': 'relay-subject', 'email': 'alice@privaterelay.appleid.com', 'email_verified': True}
+            request['fixture_profile'] = profile
             result = {'state': request['state']}
             if fields.get('choice') == 'deny':
                 result['error'] = 'access_denied'
@@ -183,7 +206,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'invalid_grant'})
         access = secrets.token_urlsafe(32)
         with LOCK:
-            TOKENS[access] = provider
+            TOKENS[access] = {'provider': provider, 'profile': request['fixture_profile'], 'scope': request.get('scope', '')}
         response = {'access_token': access, 'token_type': 'Bearer', 'expires_in': 120, 'scope': request.get('scope', '')}
         if provider in OIDC:
             response['id_token'] = jwt(provider, request, invalid)
