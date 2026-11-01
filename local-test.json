@@ -1,0 +1,20 @@
+{
+  "chart": {
+    "repository": "rsds-infra-helm",
+    "path": "charts/company-page"
+  },
+  "images": [
+    {
+      "repository": "rsds-infra-company-page",
+      "context": ".",
+      "valuesPrefix": "image"
+    }
+  ],
+  "checks": [
+    { "path": "/", "repository": "rsds-infra-company-page", "imageFile": "usr/share/nginx/html/index.html" },
+    { "path": "/pl/", "repository": "rsds-infra-company-page", "imageFile": "usr/share/nginx/html/pl/index.html" },
+    { "path": "/styles.css", "repository": "rsds-infra-company-page", "file": "public/styles.css" },
+    { "path": "/logo-icon.png", "repository": "rsds-infra-company-page", "file": "public/logo-icon.png" },
+    { "path": "/logo.png", "repository": "rsds-infra-company-page", "file": "public/logo.png" }
+  ]
+}
