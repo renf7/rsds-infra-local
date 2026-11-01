@@ -203,8 +203,10 @@ class AuthenticationTests(unittest.TestCase):
         self.page.get_by_role('button', name='Verify and continue', exact=True).click()
         expect(self.page.get_by_role('alert')).to_contain_text('Invalid or expired code')
         self.assertFalse(any(c['name'] == 'RSDS_ACCESS' for c in self.context.cookies()))
+        pending = next(c for c in self.context.cookies() if c['name'] == 'RSDS_PENDING')
         self.complete_email_verification()
         self.assert_authenticated('google')
+        self.context.add_cookies([pending])  # Replay the original bound flow, not just a missing cookie.
         replay = self.context.request.post(BASE_URL + '/api/auth/verify-email', headers=self.csrf(), data={'code': correct})
         self.assertEqual(replay.status, 400)
 
