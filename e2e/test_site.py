@@ -155,13 +155,35 @@ class SiteTests(unittest.TestCase):
                     self.page.locator(f'.site-nav a[href="#{section}"]').click()
                     expect(self.page).to_have_url(BASE_URL + route + "#" + section)
                     expect(self.page.locator(f"#{section} h2")).to_be_in_viewport()
+                    self.wait_for_scroll_to_finish()
+                    expect(self.page.locator(f"#{section} h2")).to_be_in_viewport()
                 self.page.locator(".brand").click()
                 expect(self.page).to_have_url(BASE_URL + route)
                 expect(self.page.locator("h1")).to_be_in_viewport()
+                self.wait_for_scroll_to_finish()
                 for section in ("services", "contact"):
                     self.page.locator(f'.hero-actions a[href="#{section}"]').click()
                     expect(self.page).to_have_url(BASE_URL + route + "#" + section)
                     expect(self.page.locator(f"#{section} h2")).to_be_in_viewport()
+                    self.wait_for_scroll_to_finish()
+                    expect(self.page.locator(f"#{section} h2")).to_be_in_viewport()
+
+    def wait_for_scroll_to_finish(self):
+        # An anchor can enter the viewport before native smooth scrolling ends.
+        # Finish that movement before clicking the next link, then recheck its destination.
+        self.page.evaluate("""() => new Promise((resolve, reject) => {
+            let previous = scrollY, stable = 0;
+            const deadline = performance.now() + 5000;
+            function frame() {
+                const current = scrollY;
+                stable = Math.abs(current - previous) < 0.5 ? stable + 1 : 0;
+                previous = current;
+                if (stable >= 5) resolve();
+                else if (performance.now() > deadline) reject(new Error('Anchor scrolling did not settle'));
+                else requestAnimationFrame(frame);
+            }
+            requestAnimationFrame(frame);
+        })""")
 
     def test_language_links_work_with_keyboard(self):
         self.page.goto(BASE_URL + "/")

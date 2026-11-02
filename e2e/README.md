@@ -19,6 +19,8 @@ Run with `rsds-local up --docker-context <local-context> --e2e`. Browser E2E rem
 
 There are 16 test methods, with both language routes and multiple viewport widths exercised within relevant scenarios. The runner requires at least 16 successful headless tests and fails on incomplete reports. JSON/JUnit, screenshots, traces and browser logs are retained per managed run.
 
+Sequential section/CTA checks wait for native smooth scrolling to settle before the next click, then recheck the destination heading. An element can enter the viewport while scrolling is still in progress; clicking the next anchor during that animation caused a local navigation timing failure. The test keeps the real animation, URL checks and viewport assertions; it does not force-scroll elements, disable animation, retry failures or increase assertion timeouts.
+
 Country responses are mocked; tests never call the external country service. The HTTP 503 scenario accepts only the deliberately mocked endpoint's exact 503 response/resource message. Other HTTP, console, request or JavaScript errors still fail. Contact links are inspected without launching an email client or sending email.
 
 These tests cover current static behavior. They do not claim pixel-perfect visual regression or coverage of future login, theme switching, backend services or role authorization. Keep the behavioral contracts when the frontend implementation changes, adjusting selectors only where necessary.
