@@ -29,3 +29,10 @@ func TestLiveProviderE2ERejectedBeforeTools(t *testing.T) {
 		t.Fatalf("expected live E2E rejection, got %v", err)
 	}
 }
+
+func TestManualAuthenticationDoesNotFallBackToFixtures(t *testing.T) {
+	err := up("../../local-test-auth.json", t.TempDir(), "default", "rsds-local-test", 18092, nil, false)
+	if err == nil || !strings.Contains(err.Error(), "manual authentication requires --provider-config") {
+		t.Fatalf("expected missing manual OAuth configuration to fail before startup, got %v", err)
+	}
+}

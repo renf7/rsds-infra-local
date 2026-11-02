@@ -315,6 +315,9 @@ func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool,
 	if len(providerFiles) > 0 {
 		providerFile = providerFiles[0]
 	}
+	if m.Authentication && !e2e && providerFile == "" {
+		return errors.New("manual authentication requires --provider-config with registered OAuth applications; provider fixtures are available only with explicit --e2e")
+	}
 	if providerFile != "" {
 		if e2e || !m.Authentication {
 			return errors.New("--provider-config requires authentication and forbids automated --e2e; E2E uses fixtures only")

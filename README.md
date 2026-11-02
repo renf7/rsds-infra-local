@@ -6,7 +6,7 @@ Run the RSDS-INFRA application locally through its real Helm chart before produc
 
 ### Manual real-provider sign-in (separate from automated E2E)
 
-Automated authentication E2E always uses fixtures. For manual sign-in with actual accounts, use an explicit private `--provider-config` env file; it selects live provider endpoints while retaining local DynamoDB and application JWTs. It disables the identity-provider fixture deployment and rejects `--e2e`. Providers not configured stay disabled. This mode needs application-owner OAuth registrations, not just personal test accounts. No live acceptance is claimed until actual login succeeds.
+Automated authentication E2E always uses fixtures. For manual sign-in with actual accounts, use an explicit private `--provider-config` env file; it selects live provider endpoints while retaining local DynamoDB and application JWTs. It disables the identity-provider fixture deployment and rejects `--e2e`. Authentication startup without either option fails clearly instead of silently presenting fixtures for manual testing. Providers not configured stay disabled. This mode needs application-owner OAuth registrations, not just personal test accounts. No live acceptance is claimed until actual login succeeds.
 
 Create an ignored `.local-oauth/providers.env` file, restricted to your user, containing the registered values (no shell quotes, no `export`, no trailing slash on the origin):
 
