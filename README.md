@@ -4,6 +4,34 @@ Run the RSDS-INFRA application locally through its real Helm chart before produc
 
 ## Prerequisites
 
+### Manual real-provider sign-in (separate from automated E2E)
+
+Automated authentication E2E always uses fixtures. For manual sign-in with actual accounts, use an explicit private `--provider-config` env file; it selects live provider endpoints while retaining local DynamoDB and application JWTs. It disables the identity-provider fixture deployment and rejects `--e2e`. Providers not configured stay disabled. This mode needs application-owner OAuth registrations, not just personal test accounts. No live acceptance is claimed until actual login succeeds.
+
+Create an ignored `.local-oauth/providers.env` file, restricted to your user, containing the registered values (no shell quotes, no `export`, no trailing slash on the origin):
+
+```text
+RSDS_AUTH_PUBLIC_BASE_URL=http://127.0.0.1:18092
+RSDS_AUTH_PROVIDERS_GITHUB_CLIENT_ID=<registered-client-id>
+RSDS_AUTH_PROVIDERS_GITHUB_CLIENT_SECRET=<registered-client-secret>
+```
+
+The placeholders must be replaced locally. Add matching `RSDS_AUTH_PROVIDERS_GOOGLE_CLIENT_ID`/`CLIENT_SECRET`, `FACEBOOK_CLIENT_ID`/`CLIENT_SECRET` plus `FACEBOOK_GRAPH_VERSION`, or `MICROSOFT_CLIENT_ID`/`CLIENT_SECRET` plus `MICROSOFT_TENANT`, all with the same `RSDS_AUTH_PROVIDERS_` prefix. Each provider registration must allow the exact callback `<public-base-url>/api/auth/login/oauth2/code/<provider>`. For personal Outlook accounts use a registration allowing personal accounts and tenant `9188040d-6c67-4c5b-b112-36a304b66dad`. No provider account passwords belong in this file.
+
+From the runner root, after rebuilding its binary and while feature PRs remain unmerged:
+
+```powershell
+.\out\rsds-local.exe up --docker-context desktop-linux --manifest local-test-auth.json --pr rsds-infra-auth-service=1 --pr rsds-infra-company-page=17 --pr rsds-infra-helm=9 --pr rsds-infra-local=1 --provider-config .local-oauth/providers.env --port 18092 --workdir .local-manual-auth
+```
+
+Use a fresh owned workdir/cluster/port, separate from fixture E2E. Open the configured origin and select Continue with a configured provider; its real page opens. The runner imports the private file into a local Kubernetes Secret, never into source/images/reports or command-line values. Keep both the file and kubeconfig private. Reports identify `live-provider-manual`; PASS only means local deployment/content readiness, not successful external login. Check provider consent/MFA and account/avatar manually.
+
+Local Mailpit captures any application email verification codes at `/__test/mail/`; it does not send to the real mailbox. Fetch the code there when Microsoft/Facebook require email proof. External provider MFA emails still come from the provider. If you want real application email delivery, configure production SMTP separately; this local mode deliberately does not relay mail externally.
+
+Provider callback restrictions differ. Google/GitHub/Microsoft must explicitly approve the selected loopback URL. Facebook may require a registered HTTPS development domain and trusted local TLS/reverse proxy; the runner does not provision tunnels/TLS or bypass provider restrictions. Apple requires its registered domain and production HTTPS/Secure-cookie profile and is rejected by local HTTP live mode. Never treat fixture results as live-provider acceptance.
+
+After login the UI shows two uppercase account-name initials on a persisted random-colour circle. The colour belongs to the unique verified-email account and stays the same across linked providers/restarts; deleting the ephemeral local DB creates new accounts/colours. Connection portability is implemented through backend repository adapters; arbitrary NoSQL engines cannot be swapped by credentials alone.
+
 - Docker Desktop with Linux containers (or a local Linux Docker engine), running.
 - Git and kubectl on PATH. Docker Desktop includes kubectl on Windows.
 - Internet access for public source, images, and checksum-verified tool downloads.

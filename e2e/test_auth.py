@@ -89,6 +89,10 @@ class AuthenticationTests(unittest.TestCase):
 
     def assert_authenticated(self, provider, language='en'):
         expect(self.page.get_by_role('button', name='Wyloguj' if language == 'pl' else 'Log out', exact=True)).to_be_visible()
+        avatar = self.page.get_by_test_id('account-avatar')
+        expect(avatar).to_be_visible()
+        self.assertEqual(len(avatar.inner_text()), 2)
+        self.assertEqual(avatar.inner_text(), avatar.inner_text().upper())
         cookie = self.access_cookie()
         self.assertTrue(cookie['httpOnly'])
         self.assertEqual(cookie['sameSite'], 'Lax')

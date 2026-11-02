@@ -151,6 +151,7 @@ func entry(args []string) error {
 	cluster := fs.String("cluster", "", "unique rsds-local-* cluster name")
 	port := fs.Int("port", 18080, "loopback HTTP port")
 	e2e := fs.Bool("e2e", false, "run optional headless browser E2E tests")
+	providerConfig := fs.String("provider-config", "", "private OAuth env file for real-provider manual testing; incompatible with --e2e")
 	prs := overrides{}
 	fs.Var(prs, "pr", "repeatable repository=PR or GitHub PR URL")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -189,7 +190,7 @@ func entry(args []string) error {
 	if !clusterPattern.MatchString(*cluster) {
 		return errors.New("cluster name must start rsds-local- and contain only lowercase letters, digits and hyphens")
 	}
-	return up(manifestAbs, root, *dockerContext, *cluster, *port, prs, *e2e)
+	return up(manifestAbs, root, *dockerContext, *cluster, *port, prs, *e2e, *providerConfig)
 }
 func usage() {
 	fmt.Println("rsds-local up --docker-context desktop-linux [--pr rsds-infra-helm=4] [--pr rsds-infra-company-page=9] [--port 18080] [--e2e]\nrsds-local status\nrsds-local down\nWithout --pr, every source/image is built from its repository's actual default branch. Run from the repository root.")
@@ -305,10 +306,22 @@ func localDocker(s *State) error {
 	_, e = docker(s, "info", "--format", "{{.ServerVersion}}")
 	return e
 }
-func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool) error {
+func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool, providerFiles ...string) error {
 	m, e := readManifest(path)
 	if e != nil {
 		return e
+	}
+	providerFile := ""
+	if len(providerFiles) > 0 {
+		providerFile = providerFiles[0]
+	}
+	if providerFile != "" {
+		if e2e || !m.Authentication {
+			return errors.New("--provider-config requires authentication and forbids automated --e2e; E2E uses fixtures only")
+		}
+		if e = validateProviderFile(providerFile); e != nil {
+			return e
+		}
 	}
 	names := map[string]bool{m.Chart.Repository: true}
 	for _, im := range m.Images {
@@ -343,6 +356,9 @@ func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool)
 	s.AuthEnabled = m.Authentication
 	if s.AuthEnabled {
 		s.IdentityProviderMode = "local-protocol-fixture"
+		if providerFile != "" {
+			s.IdentityProviderMode = "live-provider-manual"
+		}
 	}
 	s.Kubeconfig = filepath.Join(s.RunDirectory, "kubeconfig")
 	if e = localDocker(s); e != nil {
@@ -436,6 +452,11 @@ func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool)
 		if e = prepareAuthStack(s); e != nil {
 			return e
 		}
+		if providerFile != "" {
+			if _, e = kubectl(s, "create", "secret", "generic", "rsds-local-provider-config", "--from-env-file="+providerFile); e != nil {
+				return errors.New("could not import private OAuth configuration into the local cluster")
+			}
+		}
 	}
 	helmArgs := []string{"upgrade", "--install", "rsds-local", chart, "--kubeconfig", s.Kubeconfig, "--kube-context", "kind-" + cluster, "--namespace", "rsds-local-test", "--create-namespace", "--set", "ingress.enabled=false", "--set", "fullnameOverride=rsds-local", "--set", "service.type=NodePort", "--wait", "--timeout", "120s"}
 	for _, im := range m.Images {
@@ -444,6 +465,9 @@ func up(path, root, dcontext, cluster string, port int, prs overrides, e2e bool)
 	}
 	if s.AuthEnabled {
 		helmArgs = append(helmArgs, "--set", "auth.enabled=true", "--set", "auth.local=true", "--set", "dynamodb.enabled=true", "--set", "mailpit.enabled=true", "--set", "idp.enabled=true", "--set", "auth.signingSecretName=rsds-local-auth-signing", "--set", "auth.trustSecretName=rsds-local-auth-trust", "--set", "idp.clientTrustSecretName=rsds-local-idp-client-trust")
+		if providerFile != "" {
+			helmArgs = append(helmArgs, "--set", "idp.enabled=false", "--set", "auth.providerMode=live", "--set", "auth.providerSecretName=rsds-local-provider-config")
+		}
 	}
 	if _, e = run("", nil, helm, helmArgs...); e != nil {
 		return e
