@@ -16,6 +16,17 @@ func validateProviderFile(path string) error {
 	if len(data) > 65536 {
 		return errors.New("OAuth env file exceeds 64 KiB")
 	}
+	values, err := parseProviderValues(string(data))
+	if err != nil {
+		return err
+	}
+	if err = validateProviderOrigin(values["RSDS_AUTH_PUBLIC_BASE_URL"]); err != nil {
+		return err
+	}
+	return validateProviderPairs(values)
+}
+
+func parseProviderValues(data string) (map[string]string, error) {
 	allowed := map[string]bool{"RSDS_AUTH_PUBLIC_BASE_URL": true, "RSDS_AUTH_PROVIDERS_MICROSOFT_TENANT": true, "RSDS_AUTH_PROVIDERS_FACEBOOK_GRAPH_VERSION": true}
 	for _, provider := range []string{"GOOGLE", "FACEBOOK", "MICROSOFT", "GITHUB"} {
 		for _, suffix := range []string{"CLIENT_ID", "CLIENT_SECRET"} {
@@ -23,21 +34,29 @@ func validateProviderFile(path string) error {
 		}
 	}
 	values := map[string]string{}
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range strings.Split(data, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		key, value, ok := strings.Cut(line, "=")
 		if !ok || !allowed[key] || values[key] != "" || value == "" {
-			return errors.New("invalid, duplicate or unsupported OAuth configuration entry (values withheld)")
+			return nil, errors.New("invalid, duplicate or unsupported OAuth configuration entry (values withheld)")
 		}
 		values[key] = value
 	}
-	origin, err := url.Parse(values["RSDS_AUTH_PUBLIC_BASE_URL"])
+	return values, nil
+}
+
+func validateProviderOrigin(value string) error {
+	origin, err := url.Parse(value)
 	if err != nil || origin.Host == "" || origin.User != nil || origin.RawQuery != "" || origin.Fragment != "" || origin.Path != "" || (origin.Scheme != "https" && !(origin.Scheme == "http" && (origin.Hostname() == "127.0.0.1" || origin.Hostname() == "localhost"))) {
 		return errors.New("OAuth public base URL must be an exact HTTPS origin or HTTP loopback origin, without a trailing slash")
 	}
+	return nil
+}
+
+func validateProviderPairs(values map[string]string) error {
 	count := 0
 	for _, provider := range []string{"GOOGLE", "FACEBOOK", "MICROSOFT", "GITHUB"} {
 		prefix := "RSDS_AUTH_PROVIDERS_" + provider + "_"
