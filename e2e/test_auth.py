@@ -79,7 +79,7 @@ class AuthenticationTests(unittest.TestCase):
         expect(field).to_be_visible()
         field.fill(self.latest_code())
         self.page.get_by_role('button', name='Potwierdź i kontynuuj' if polish else 'Verify and continue', exact=True).click()
-        expect(self.page.get_by_role('button', name='Wyloguj' if polish else 'Log out', exact=True)).to_be_visible()
+        expect(self.page.get_by_test_id('account-avatar')).to_be_visible()
 
     def access_cookie(self):
         cookies = self.context.cookies()
@@ -88,9 +88,10 @@ class AuthenticationTests(unittest.TestCase):
         return found[0]
 
     def assert_authenticated(self, provider, language='en'):
-        expect(self.page.get_by_role('button', name='Wyloguj' if language == 'pl' else 'Log out', exact=True)).to_be_visible()
         avatar = self.page.get_by_test_id('account-avatar')
         expect(avatar).to_be_visible()
+        expect(avatar).to_have_attribute('aria-haspopup', 'menu')
+        expect(self.page.get_by_role('button', name='Wyloguj' if language == 'pl' else 'Log out', exact=True)).to_have_count(0)
         self.assertEqual(len(avatar.inner_text()), 2)
         self.assertEqual(avatar.inner_text(), avatar.inner_text().upper())
         cookie = self.access_cookie()
@@ -112,7 +113,7 @@ class AuthenticationTests(unittest.TestCase):
         self.assertTrue(identity['email'])
         self.assertEqual(identity['subject'], claims['sub'])
         self.page.reload()
-        expect(self.page.get_by_role('button', name='Wyloguj' if language == 'pl' else 'Log out', exact=True)).to_be_visible()
+        expect(self.page.get_by_test_id('account-avatar')).to_be_visible()
 
     def csrf(self):
         response = self.context.request.get(BASE_URL + '/api/auth/csrf')
@@ -147,6 +148,65 @@ class AuthenticationTests(unittest.TestCase):
         self.login()
         self.assert_authenticated('google')
         self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'), 320)
+
+    def test_avatar_menu_survives_viewport_changes_and_supports_click_and_right_click(self):
+        self.login()
+        avatar = self.page.get_by_test_id('account-avatar')
+        expect(avatar).to_be_visible()
+        colour = avatar.evaluate('element => getComputedStyle(element).backgroundColor')
+        for width in [320, 360, 390, 640, 1024, 1440]:
+            with self.subTest(width=width):
+                self.page.set_viewport_size({'width': width, 'height': 800})
+                expect(avatar).to_be_visible()
+                bounds = avatar.bounding_box()
+                self.assertGreaterEqual(bounds['x'], 0)
+                self.assertLessEqual(bounds['x'] + bounds['width'], width)
+                self.assertEqual(avatar.evaluate('element => getComputedStyle(element).backgroundColor'), colour)
+                avatar.click()
+                menu = self.page.get_by_role('menu')
+                expect(menu).to_be_visible()
+                item = self.page.get_by_role('menuitem', name='Log out', exact=True)
+                expect(item).to_be_focused()
+                bounds = menu.bounding_box()
+                self.assertGreaterEqual(bounds['x'], 0)
+                self.assertLessEqual(bounds['x'] + bounds['width'], width)
+                if width == 320:
+                    self.page.screenshot(path=str(ARTIFACTS / 'account-menu-mobile.png'), full_page=True)
+                item.press('Escape')
+                expect(menu).not_to_be_visible()
+                expect(avatar).to_be_focused()
+                avatar.click(button='right')
+                expect(menu).to_be_visible()
+                self.page.get_by_role('heading', level=1).click()
+                expect(menu).not_to_be_visible()
+                self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'), width)
+
+    def test_polish_account_menu_keyboard_logout_clears_the_real_session(self):
+        self.login(route='/pl/')
+        avatar = self.page.get_by_test_id('account-avatar')
+        avatar.press('Shift+F10')
+        item = self.page.get_by_role('menuitem', name='Wyloguj', exact=True)
+        expect(item).to_be_focused()
+        item.press('Escape')
+        expect(avatar).to_be_focused()
+        avatar.press('Enter')
+        self.page.get_by_role('menuitem', name='Wyloguj', exact=True).press('Enter')
+        expect(self.page.get_by_role('button', name='Zaloguj się', exact=True)).to_be_visible()
+        expect(avatar).to_have_count(0)
+        self.assertFalse(any(c['name'] == 'RSDS_ACCESS' for c in self.context.cookies()))
+        self.assertEqual(self.context.request.get(BASE_URL + '/api/auth/me').status, 401)
+
+    def test_missing_access_cookie_recovers_same_account_avatar_with_real_refresh(self):
+        self.login()
+        original = self.context.request.get(BASE_URL + '/api/auth/me').json()
+        self.context.clear_cookies(name='RSDS_ACCESS')
+        self.page.set_viewport_size({'width': 320, 'height': 800})
+        self.page.reload()
+        expect(self.page.get_by_test_id('account-avatar')).to_be_visible()
+        self.access_cookie()
+        identity = self.context.request.get(BASE_URL + '/api/auth/me').json()
+        self.assertEqual(identity['subject'], original['subject'])
+        self.assertEqual(identity['avatarColor'], original['avatarColor'])
 
     def test_polish_sso_restores_the_language_route(self):
         self.login(route='/pl/')
