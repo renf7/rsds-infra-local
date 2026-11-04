@@ -168,7 +168,8 @@ class Handler(BaseHTTPRequestHandler):
             if choice == 'unverified':
                 profile = {'sub': 'unverified-' + suffix, 'email': 'verify-' + suffix + '@example.test', 'email_verified': False}
             elif choice == 'missing':
-                profile = {'sub': 'missing-' + suffix}
+                # A returning provider account keeps its subject even without email.
+                profile = {'sub': 'missing-email-subject'}
             elif choice == 'changed':
                 profile['email'] = 'changed@example.test'
             elif choice == 'relay':
