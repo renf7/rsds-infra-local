@@ -120,6 +120,37 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         return {'X-XSRF-TOKEN': response.json()['token']}
 
+    def test_shared_spinner_tracks_provider_navigation_settings_save_and_logout(self):
+        # Delay transport only; real endpoints, JWT and database remain untouched.
+        network = self.context.new_cdp_session(self.page)
+        network.send('Network.enable')
+        network.send('Network.emulateNetworkConditions', {'offline': False, 'latency': 800, 'downloadThroughput': 1000000, 'uploadThroughput': 1000000})
+        self.page.goto(BASE_URL + '/')
+        self.page.get_by_role('button', name='Log in', exact=True).click()
+        spinner = self.page.get_by_test_id('activity-indicator')
+        expect(spinner).to_be_visible()
+        expect(spinner).not_to_be_visible()
+        self.page.evaluate("document.querySelector('a[href=\"/api/auth/oauth2/authorization/google\"]').click()")
+        expect(spinner).to_be_visible()
+        self.page.screenshot(path=str(ARTIFACTS / 'provider-navigation-spinner.png'))
+        expect(self.page.get_by_role('heading', name='Local google identity provider')).to_be_visible()
+        self.page.get_by_role('button', name='Continue as Alice', exact=True).click()
+        self.assert_authenticated('google')
+        expect(spinner).not_to_be_visible()
+        self.page.goto(BASE_URL + '/settings/')
+        self.page.get_by_label('Email (optional)', exact=True).fill('spinner@example.test')
+        self.page.get_by_role('button', name='Save changes', exact=True).click()
+        expect(spinner).to_be_visible()
+        expect(self.page.get_by_text('Saved changes.', exact=True)).to_be_visible()
+        expect(spinner).not_to_be_visible()
+        self.page.get_by_test_id('account-avatar').click()
+        self.page.get_by_role('menuitem', name='Log out', exact=True).click()
+        expect(spinner).to_be_visible()
+        expect(self.page).to_have_url(BASE_URL + '/')
+        expect(self.page.get_by_role('button', name='Log in', exact=True)).to_be_visible()
+        expect(spinner).not_to_be_visible()
+        network.detach()
+
     def test_modal_keyboard_escape_and_focus_restoration(self):
         self.page.goto(BASE_URL + '/')
         button = self.page.get_by_role('button', name='Log in', exact=True)
