@@ -57,8 +57,8 @@ class AuthenticationTests(unittest.TestCase):
         self.page.get_by_role('button', name=choice, exact=True).click()
         if complete:
             expect(self.page).to_have_url(re.compile(r'.*[?&]login=(success|verify|failed)'))
-            if 'login=verify' in self.page.url:
-                self.complete_email_verification(polish=route.startswith('/pl/'))
+            self.assertNotIn('login=verify', self.page.url)
+            expect(self.page.get_by_role('dialog')).not_to_be_visible()
 
     def latest_code(self):
         # Local SMTP fixture only: never write message bodies/codes into reports or traces.
@@ -110,7 +110,7 @@ class AuthenticationTests(unittest.TestCase):
         response = self.context.request.get(BASE_URL + '/api/auth/me')
         self.assertEqual(response.status, 200, 'The backend must verify the actual signed JWT')
         identity = response.json()
-        self.assertTrue(identity['email'])
+        self.assertIn('email', identity)
         self.assertEqual(identity['subject'], claims['sub'])
         self.page.reload()
         expect(self.page.get_by_test_id('account-avatar')).to_be_visible()
@@ -241,38 +241,36 @@ class AuthenticationTests(unittest.TestCase):
         self.context.add_cookies([current])
         self.assertEqual(self.context.request.post(BASE_URL + '/api/auth/refresh', headers=self.csrf()).status, 401)
 
-    def test_same_verified_email_across_all_providers_uses_one_internal_account(self):
-        subjects = set()
+    def test_all_providers_sign_in_without_email_code_and_only_verified_emails_link(self):
+        verified_subjects = set()
+        unverified_subjects = set()
         for provider in PROVIDERS:
             self.context.clear_cookies()
             self.login(provider)
-            response = self.context.request.get(BASE_URL + '/api/auth/me')
-            self.assertEqual(response.status, 200)
-            identity = response.json()
-            self.assertEqual(identity['email'], 'alice@example.test')
-            subjects.add(identity['subject'])
-        self.assertEqual(len(subjects), 1)
+            self.assert_authenticated(provider)
+            identity = self.context.request.get(BASE_URL + '/api/auth/me').json()
+            if provider in ('microsoft', 'facebook'):
+                self.assertEqual(identity['email'], '')
+                unverified_subjects.add(identity['subject'])
+            else:
+                self.assertEqual(identity['email'], 'alice@example.test')
+                verified_subjects.add(identity['subject'])
+        self.assertEqual(len(verified_subjects), 1)
+        self.assertEqual(len(unverified_subjects), 2)
+        self.assertFalse(verified_subjects & unverified_subjects)
 
-    def test_unverified_email_requires_delivered_code_before_any_jwt(self):
-        self.login('google', 'Continue with unverified email', complete=False)
-        expect(self.page.get_by_label('Verification code', exact=True)).to_be_visible()
-        self.assertFalse(any(c['name'] == 'RSDS_ACCESS' for c in self.context.cookies()))
-        self.assertEqual(self.context.request.get(BASE_URL + '/api/auth/me').status, 401)
-        self.assertEqual(self.context.request.post(BASE_URL + '/api/auth/verify-email', data={'code': '000000'}).status, 403)
-        self.page.get_by_label('Verification code', exact=True).fill('000000')
-        # Avoid a probabilistic wrong-code test: use a deterministic different value.
-        correct = self.latest_code()
-        wrong = '111111' if correct != '111111' else '222222'
-        self.page.get_by_label('Verification code', exact=True).fill(wrong)
-        self.page.get_by_role('button', name='Verify and continue', exact=True).click()
-        expect(self.page.get_by_role('alert')).to_contain_text('Invalid or expired code')
-        self.assertFalse(any(c['name'] == 'RSDS_ACCESS' for c in self.context.cookies()))
-        pending = next(c for c in self.context.cookies() if c['name'] == 'RSDS_PENDING')
-        self.complete_email_verification()
+    def test_unverified_email_signs_in_immediately_without_linking_verified_owner(self):
+        self.login('google')
+        owner = self.context.request.get(BASE_URL + '/api/auth/me').json()
+        self.context.clear_cookies()
+        self.login('google', 'Continue with unverified email')
         self.assert_authenticated('google')
-        self.context.add_cookies([pending])  # Replay the original bound flow, not just a missing cookie.
-        replay = self.context.request.post(BASE_URL + '/api/auth/verify-email', headers=self.csrf(), data={'code': correct})
-        self.assertEqual(replay.status, 400)
+        identity = self.context.request.get(BASE_URL + '/api/auth/me').json()
+        self.assertEqual(identity['email'], '')
+        self.assertNotEqual(identity['subject'], owner['subject'])
+        self.context.clear_cookies()
+        self.login('google', 'Continue with unverified email')
+        self.assertEqual(self.context.request.get(BASE_URL + '/api/auth/me').json()['subject'], identity['subject'])
 
     def test_missing_email_signs_in_and_optional_contact_is_saved_on_full_settings_page(self):
         self.login('github', 'Continue without email')

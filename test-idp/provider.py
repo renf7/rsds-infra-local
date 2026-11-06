@@ -166,7 +166,7 @@ class Handler(BaseHTTPRequestHandler):
             suffix = hashlib.sha256(request['state'].encode()).hexdigest()[:16]
             profile = {'sub': 'alice-subject', 'email': 'alice@example.test', 'email_verified': True}
             if choice == 'unverified':
-                profile = {'sub': 'unverified-' + suffix, 'email': 'verify-' + suffix + '@example.test', 'email_verified': False}
+                profile = {'sub': 'unverified-stable-subject', 'email': 'alice@example.test', 'email_verified': False}
             elif choice == 'missing':
                 # A returning provider account keeps its subject even without email.
                 profile = {'sub': 'missing-email-subject'}
