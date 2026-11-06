@@ -321,6 +321,20 @@ class AuthenticationTests(unittest.TestCase):
         self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'), 320)
         self.page.screenshot(path=str(ARTIFACTS / 'settings-mobile-pl.png'), full_page=True)
 
+    def test_logout_from_settings_returns_to_localized_home_and_clears_session(self):
+        for language, home, settings, logout in [('en', '/', '/settings/', 'Log out'), ('pl', '/pl/', '/pl/settings/', 'Wyloguj')]:
+            with self.subTest(language=language):
+                self.context.clear_cookies()
+                self.login(route=home)
+                self.page.goto(BASE_URL + settings)
+                expect(self.page.get_by_label('Email (optional)' if language == 'en' else 'Email (opcjonalny)', exact=True)).to_be_visible()
+                self.page.get_by_test_id('account-avatar').click()
+                self.page.get_by_role('menuitem', name=logout, exact=True).click()
+                expect(self.page).to_have_url(BASE_URL + home)
+                expect(self.page.get_by_role('button', name='Log in' if language == 'en' else 'Zaloguj się', exact=True)).to_be_visible()
+                expect(self.page.get_by_label('Email (optional)' if language == 'en' else 'Email (opcjonalny)', exact=True)).to_have_count(0)
+                self.assertEqual(self.context.request.get(BASE_URL + '/api/auth/me').status, 401)
+
     def test_settings_are_not_exposed_to_anonymous_visitors(self):
         self.page.goto(BASE_URL + '/settings/')
         expect(self.page.get_by_text('Sign in to open settings.', exact=True)).to_be_visible()
