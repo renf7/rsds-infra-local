@@ -130,9 +130,17 @@ class AuthenticationTests(unittest.TestCase):
         spinner = self.page.get_by_test_id('activity-indicator')
         expect(spinner).to_be_visible()
         expect(spinner).not_to_be_visible()
-        self.page.evaluate("document.querySelector('a[href=\"/api/auth/oauth2/authorization/google\"]').click()")
-        expect(spinner).to_be_visible()
-        self.page.screenshot(path=str(ARTIFACTS / 'provider-navigation-spinner.png'))
+        # Locator assertions wait for a pending navigation. Inspect the departing
+        # document within its paint frame instead, before the delayed redirect.
+        visible = self.page.evaluate("""async () => {
+            document.querySelector('a[href="/api/auth/oauth2/authorization/google"]').click();
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const indicator = document.querySelector('[data-testid="activity-indicator"]');
+            return !!indicator && indicator.getBoundingClientRect().width > 0;
+        }""")
+        self.assertTrue(visible, 'Provider navigation must paint the shared spinner before leaving')
+        screenshot = network.send('Page.captureScreenshot', {'format': 'png'})
+        (ARTIFACTS / 'provider-navigation-spinner.png').write_bytes(base64.b64decode(screenshot['data']))
         expect(self.page.get_by_role('heading', name='Local google identity provider')).to_be_visible()
         self.page.get_by_role('button', name='Continue as Alice', exact=True).click()
         self.assert_authenticated('google')
