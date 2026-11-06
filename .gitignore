@@ -1,0 +1,8 @@
+.local*/
+out/
+coverage.out
+*.exe
+*.test
+.scannerwork/
+coverage-data/
+coverage-unit.out
