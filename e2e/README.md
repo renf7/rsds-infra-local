@@ -1,5 +1,11 @@
 # Static site behavior coverage
 
+RSDSINFRA-32 defers live Apple sign-in until website profitability because of its
+annual developer membership cost. The EN/PL login UI exposes only Facebook,
+Microsoft, Google and GitHub and must contain no Apple option. Retained Apple
+backend protocol tests navigate directly to the fixture authorization endpoint;
+they do not imply a public UI option, a paid membership or live Apple coverage.
+
 Run with `rsds-local up --docker-context <local-context> --e2e`. Browser E2E remains **disabled by default**. CI explicitly enables it for default-branch and selected-PR deployments. The suite exercises the actual deployed HTML/CSS/JavaScript, not a duplicate implementation.
 
 | Existing behavior | Browser assertions |

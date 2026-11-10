@@ -17,6 +17,7 @@ from playwright.sync_api import expect, sync_playwright
 BASE_URL = os.environ['BASE_URL'].rstrip('/')
 ARTIFACTS = Path('/artifacts')
 PROVIDERS = ['facebook', 'microsoft', 'google', 'apple', 'github']
+VISIBLE_PROVIDERS = [provider for provider in PROVIDERS if provider != 'apple']
 LABELS = {'github': 'GitHub'}
 
 
@@ -52,7 +53,12 @@ class AuthenticationTests(unittest.TestCase):
         self.page.get_by_role('button', name='Zaloguj się' if route.startswith('/pl/') else 'Log in', exact=True).click()
         dialog = self.page.get_by_role('dialog')
         expect(dialog).to_be_visible()
-        dialog.get_by_role('link', name=('Kontynuuj z ' if route.startswith('/pl/') else 'Continue with ') + LABELS.get(provider, provider.capitalize()), exact=True).click()
+        if provider == 'apple':
+            # RSDSINFRA-32: backend protocol fixture coverage, not an Apple UI option.
+            expect(dialog.get_by_text('Apple', exact=False)).to_have_count(0)
+            self.page.goto(BASE_URL + '/api/auth/oauth2/authorization/apple' + ('?lang=pl' if route.startswith('/pl/') else ''))
+        else:
+            dialog.get_by_role('link', name=('Kontynuuj z ' if route.startswith('/pl/') else 'Continue with ') + LABELS.get(provider, provider.capitalize()), exact=True).click()
         expect(self.page.get_by_role('heading', name=f'Local {provider} identity provider')).to_be_visible()
         self.page.get_by_role('button', name=choice, exact=True).click()
         if complete:
@@ -166,7 +172,8 @@ class AuthenticationTests(unittest.TestCase):
         button.click()
         dialog = self.page.get_by_role('dialog')
         expect(dialog).to_be_visible()
-        for provider in PROVIDERS:
+        expect(dialog.get_by_text('Apple', exact=False)).to_have_count(0)
+        for provider in VISIBLE_PROVIDERS:
             expect(dialog.get_by_role('link', name='Continue with ' + LABELS.get(provider, provider.capitalize()), exact=True)).to_be_visible()
         for _ in range(10):
             self.page.keyboard.press('Tab')
