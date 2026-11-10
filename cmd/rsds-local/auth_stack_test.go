@@ -65,3 +65,27 @@ func TestLocalSigningKeysMatchAndExpire(t *testing.T) {
 		t.Fatal("Apple fixture does not have the matching public client key")
 	}
 }
+
+func TestBootstrapRetryPreservesKeysAndRejectsPartialMaterial(t *testing.T) {
+	directory := t.TempDir()
+	if err := ensureLocalSigningMaterial(directory); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(directory, "private.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureLocalSigningMaterial(directory); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(filepath.Join(directory, "private.pem"))
+	if err != nil || string(before) != string(after) {
+		t.Fatal("retry rotated signing material")
+	}
+	if err := os.Remove(filepath.Join(directory, "apple.p8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureLocalSigningMaterial(directory); err == nil {
+		t.Fatal("partial material must fail without overwriting")
+	}
+}

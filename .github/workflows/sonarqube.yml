@@ -50,7 +50,8 @@ jobs:
           out/rsds-local up --docker-context default --workdir .local-pr --cluster rsds-local-ci-pr --port 18081 --pr rsds-infra-helm=4 --pr rsds-infra-company-page=9 --e2e
           out/rsds-local status --workdir .local-pr
           out/rsds-local down --workdir .local-pr
-          out/rsds-local up --docker-context default --manifest local-test-auth.json --workdir .local-auth --cluster rsds-local-ci-auth --port 18082 --pr rsds-infra-auth-service=5 --pr rsds-infra-company-page=25 --pr rsds-infra-local=1 --e2e
+          out/rsds-local up --docker-context default --manifest local-test-auth.json --workdir .local-auth --cluster rsds-local-ci-auth --port 18082 --pr rsds-infra-auth-service=6 --pr rsds-infra-company-page=26 --pr rsds-infra-helm=12 --pr rsds-infra-local=2 --e2e
+          pwsh -NoProfile -File scripts/Test-ProviderVisibility.ps1 -RunDirectory .local-auth/runs/rsds-local-ci-auth
           out/rsds-local status --workdir .local-auth
           out/rsds-local down --workdir .local-auth
           go tool covdata textfmt -i=coverage-data -o=coverage.out

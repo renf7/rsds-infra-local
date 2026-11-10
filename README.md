@@ -335,3 +335,24 @@ SSO update (6 November 2026): successful provider authentication immediately sig
 This supersedes earlier automatic verified-email linking documentation. The auth backend resolves provider/issuer/immutable subject, uses an internal UUID in email-free JWTs and discards provider email. Same-email identities on different providers create separate new accounts; existing bindings/UUIDs/roles/colours are preserved. Optional contact email is user-entered Settings data only. No email-code step is part of login.
 
 Until auth PR #2 merges, select `--pr rsds-infra-auth-service=2` alongside `--pr rsds-infra-local=1` and `--manifest local-test-auth.json --e2e`; frontend and Helm now use main because their SSO PRs have merged. The updated 48-test suite checks five separate provider accounts, stable return login/colour and absence of email in internal JWTs, in addition to the existing signature/state/CSRF/refresh/Settings/UI regressions. Fixtures stay opt-in and are never live-provider acceptance. Authentication CI uses this same auth override until merge. No provider credentials are used in E2E.
+
+## Runtime provider visibility E2E (RSDSINFRA-33)
+
+Build the current runner, then start a fixture stack with auth PR 6, company-page PR 26,
+Helm PR 12 and the runner visibility PR. Pass `--e2e` explicitly. Use an isolated
+`rsds-local-*` cluster/workdir and unused fixture port; the real-provider manual
+preview remains https://localhost:18443.
+
+After `up` passes, run the additional opt-in runtime test:
+
+```powershell
+pwsh -NoProfile -File ./scripts/Test-ProviderVisibility.ps1 -RunDirectory ./YOUR-WORKDIR/runs/YOUR-CLUSTER
+```
+
+Requires PowerShell 7, kubectl and the same local Docker context. It builds the existing
+headless browser image, changes only the owned local visibility ConfigMap, checks
+Google-only, none, invalid and restored policies in open EN/PL dialogs, verifies the
+existing authenticated session and unchanged auth pod UID/restart count, then restores
+the original policy. The provider boundary is a local fixture; application/JWT/DB are
+real. The browser receives no kubeconfig, provider credentials or Docker socket.
+Evidence is retained under the run directory in `visibility-*`. Never run against EKS.
