@@ -515,7 +515,13 @@ func checkHTTP(s *State, c Check) (Result, error) {
 	client := &http.Client{Timeout: 3 * time.Second}
 	deadline := time.Now().Add(90 * time.Second)
 	for {
-		response, e := client.Get(s.URL + c.Path)
+		request, requestErr := http.NewRequest(http.MethodGet, s.URL+c.Path, nil)
+		if requestErr != nil {
+			return Result{}, requestErr
+		}
+		request.Header.Set("Cache-Control", "no-cache, no-store")
+		request.Header.Set("Pragma", "no-cache")
+		response, e := client.Do(request)
 		if e == nil {
 			body, readErr := io.ReadAll(io.LimitReader(response.Body, 20<<20))
 			response.Body.Close()

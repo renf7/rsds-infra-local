@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -63,18 +64,53 @@ func generateLocalSigningMaterial(directory string) error {
 
 func prepareAuthStack(s *State) error {
 	keys := filepath.Join(s.RunDirectory, "auth-keys")
-	if err := generateLocalSigningMaterial(keys); err != nil {
+	if err := ensureLocalSigningMaterial(keys); err != nil {
 		return err
 	}
-	if _, err := kubectl(s, "create", "namespace", "rsds-local-test"); err != nil {
+	if _, err := ensureResource(s, "namespace", "rsds-local-test"); err != nil {
 		return err
 	}
-	if _, err := kubectl(s, "create", "secret", "generic", "rsds-local-auth-signing", "--from-file=private.pem="+filepath.Join(keys, "private.pem"), "--from-file=apple.p8="+filepath.Join(keys, "apple.p8")); err != nil {
+	if _, err := ensureResource(s, "secret", "rsds-local-auth-signing", "--from-file=private.pem="+filepath.Join(keys, "private.pem"), "--from-file=apple.p8="+filepath.Join(keys, "apple.p8")); err != nil {
 		return err
 	}
-	if _, err := kubectl(s, "create", "secret", "generic", "rsds-local-auth-trust", "--from-file=active.crt="+filepath.Join(keys, "active.crt")); err != nil {
+	if _, err := ensureResource(s, "secret", "rsds-local-auth-trust", "--from-file=active.crt="+filepath.Join(keys, "active.crt")); err != nil {
 		return err
 	}
-	_, err := kubectl(s, "create", "secret", "generic", "rsds-local-idp-client-trust", "--from-file=apple-public.pem="+filepath.Join(keys, "apple-public.pem"))
+	_, err := ensureResource(s, "secret", "rsds-local-idp-client-trust", "--from-file=apple-public.pem="+filepath.Join(keys, "apple-public.pem"))
 	return err
+}
+
+// Reuse signing material on retries: regenerating it would invalidate existing JWTs.
+func ensureLocalSigningMaterial(directory string) error {
+	count := 0
+	for _, name := range []string{"private.pem", "active.crt", "apple.p8", "apple-public.pem"} {
+		_, err := os.Stat(filepath.Join(directory, name))
+		if err == nil {
+			count++
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if count == 4 {
+		return nil
+	}
+	if count != 0 {
+		return fmt.Errorf("partial local signing material: preserve evidence and use a fresh run")
+	}
+	return generateLocalSigningMaterial(directory)
+}
+
+// An owned local cluster may contain resources from a partially completed bootstrap.
+// Never overwrite an existing secret (or rotate signing keys) merely to retry.
+func ensureResource(s *State, kind, name string, arguments ...string) (string, error) {
+	existing, err := kubectl(s, "get", kind, name, "--ignore-not-found", "-o", "name")
+	if err != nil || existing != "" {
+		return existing, err
+	}
+	args := []string{"create", kind}
+	if kind == "secret" {
+		args = append(args, "generic")
+	}
+	args = append(args, name)
+	return kubectl(s, append(args, arguments...)...)
 }
