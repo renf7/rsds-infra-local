@@ -104,6 +104,7 @@ class AuthenticationTests(unittest.TestCase):
         self.assertGreater(claims['exp'], time.time())
         self.assertLessEqual(claims['exp'] - claims['iat'], 300)
         self.assertEqual(claims['roles'], [], 'Untrusted provider roles cannot grant application roles')
+        self.assertNotIn('email', claims, 'Internal JWTs must not contain provider/contact email')
         self.assertNotIn('RSDS_ACCESS', self.page.evaluate('document.cookie'))
         self.assertNotIn(cookie['value'], self.page.url)
         self.assertEqual(self.page.evaluate('localStorage.getItem("access_token")'), None)
@@ -280,23 +281,22 @@ class AuthenticationTests(unittest.TestCase):
         self.context.add_cookies([current])
         self.assertEqual(self.context.request.post(BASE_URL + '/api/auth/refresh', headers=self.csrf()).status, 401)
 
-    def test_all_providers_sign_in_without_email_code_and_only_verified_emails_link(self):
-        verified_subjects = set()
-        unverified_subjects = set()
+    def test_all_providers_sign_in_without_email_and_never_link_matching_addresses(self):
+        subjects = set()
         for provider in PROVIDERS:
             self.context.clear_cookies()
             self.login(provider)
             self.assert_authenticated(provider)
             identity = self.context.request.get(BASE_URL + '/api/auth/me').json()
-            if provider in ('microsoft', 'facebook'):
-                self.assertEqual(identity['email'], '')
-                unverified_subjects.add(identity['subject'])
-            else:
-                self.assertEqual(identity['email'], 'alice@example.test')
-                verified_subjects.add(identity['subject'])
-        self.assertEqual(len(verified_subjects), 1)
-        self.assertEqual(len(unverified_subjects), 2)
-        self.assertFalse(verified_subjects & unverified_subjects)
+            self.assertEqual(identity['email'], '')
+            self.assertEqual(self.context.request.get(BASE_URL + '/api/auth/settings').json()['email'], '')
+            subjects.add(identity['subject'])
+            self.context.clear_cookies()
+            self.login(provider)
+            repeated = self.context.request.get(BASE_URL + '/api/auth/me').json()
+            self.assertEqual(repeated['subject'], identity['subject'])
+            self.assertEqual(repeated['avatarColor'], identity['avatarColor'])
+        self.assertEqual(len(subjects), 5, 'Matching provider emails cannot link internal accounts')
 
     def test_unverified_email_signs_in_immediately_without_linking_verified_owner(self):
         self.login('google')
@@ -389,13 +389,13 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(identity['subject'], original['subject'])
         self.assertEqual(identity['email'], original['email'])
 
-    def test_apple_private_relay_is_a_distinct_email_account(self):
+    def test_apple_private_relay_is_discarded_and_provider_account_is_distinct(self):
         self.login('google')
         original = self.context.request.get(BASE_URL + '/api/auth/me').json()
         self.context.clear_cookies()
         self.login('apple', 'Continue with Apple relay')
         identity = self.context.request.get(BASE_URL + '/api/auth/me').json()
-        self.assertEqual(identity['email'], 'alice@privaterelay.appleid.com')
+        self.assertEqual(identity['email'], '')
         self.assertNotEqual(identity['subject'], original['subject'])
 
 

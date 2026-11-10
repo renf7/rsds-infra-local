@@ -323,3 +323,9 @@ On 1 November Docker Desktop's backend was initially stopped/exited after automa
 
 
 SSO update (6 November 2026): successful provider authentication immediately signs in or creates an internal account, with no application email-code popup for any provider. Existing immutable provider bindings are reused. Ownership-verified emails may share an account; unverified or absent emails use a separate stable provider/issuer/subject identity and never silently link another account. Optional email remains available on the full Settings page. Provider consent/MFA is unchanged. Automated provider coverage uses only local protocol fixtures; live acceptance is manual. This supersedes older email-code onboarding instructions above.
+
+## Provider identity policy (RSDSINFRA-11, 10 November 2026)
+
+This supersedes earlier automatic verified-email linking documentation. The auth backend resolves provider/issuer/immutable subject, uses an internal UUID in email-free JWTs and discards provider email. Same-email identities on different providers create separate new accounts; existing bindings/UUIDs/roles/colours are preserved. Optional contact email is user-entered Settings data only. No email-code step is part of login.
+
+Until auth PR #2 merges, select `--pr rsds-infra-auth-service=2` alongside `--pr rsds-infra-local=1` and `--manifest local-test-auth.json --e2e`; frontend and Helm now use main because their SSO PRs have merged. The updated 48-test suite checks five separate provider accounts, stable return login/colour and absence of email in internal JWTs, in addition to the existing signature/state/CSRF/refresh/Settings/UI regressions. Fixtures stay opt-in and are never live-provider acceptance. Authentication CI uses this same auth override until merge. No provider credentials are used in E2E.
