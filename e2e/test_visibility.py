@@ -27,7 +27,7 @@ with sync_playwright() as playwright:
     expect(page.get_by_test_id('account-avatar')).to_be_visible()
     identity = member.request.get(base + '/api/auth/session').json()['subject']
     guests = []
-    for language, width in [('en', 320), ('pl', 1440)]:
+    for language, width in [('en', 320), ('en', 1440), ('pl', 320), ('pl', 1440)]:
         context = browser.new_context(viewport={'width': width, 'height': 900})
         context.route('https://api.country.is/**', lambda route: route.fulfill(json={'country': 'US'}))
         guest = context.new_page()
