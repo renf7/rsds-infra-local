@@ -3,8 +3,10 @@
 RSDSINFRA-32 defers live Apple sign-in until website profitability because of its
 annual developer membership cost. The EN/PL login UI exposes only Facebook,
 Microsoft, Google and GitHub and must contain no Apple option. Retained Apple
-backend protocol tests navigate directly to the fixture authorization endpoint;
-they do not imply a public UI option, a paid membership or live Apple coverage.
+backend protocol tests remain in the auth repository with an explicit opt-in.
+The normal full-stack E2E suite checks Apple disabled in backend discovery, rejected
+direct authorization with no JWT, and no Apple UI in EN/PL at 320/1440px. The other
+four provider flows still exercise real Spring callbacks, JWTs and DynamoDB Local.
 
 Run with `rsds-local up --docker-context <local-context> --e2e`. Browser E2E remains **disabled by default**. CI explicitly enables it for default-branch and selected-PR deployments. The suite exercises the actual deployed HTML/CSS/JavaScript, not a duplicate implementation.
 

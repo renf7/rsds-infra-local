@@ -16,8 +16,8 @@ from playwright.sync_api import expect, sync_playwright
 
 BASE_URL = os.environ['BASE_URL'].rstrip('/')
 ARTIFACTS = Path('/artifacts')
-PROVIDERS = ['facebook', 'microsoft', 'google', 'apple', 'github']
-VISIBLE_PROVIDERS = [provider for provider in PROVIDERS if provider != 'apple']
+PROVIDERS = ['facebook', 'microsoft', 'google', 'github']
+VISIBLE_PROVIDERS = PROVIDERS
 LABELS = {'github': 'GitHub'}
 
 
@@ -53,12 +53,7 @@ class AuthenticationTests(unittest.TestCase):
         self.page.get_by_role('button', name='Zaloguj się' if route.startswith('/pl/') else 'Log in', exact=True).click()
         dialog = self.page.get_by_role('dialog')
         expect(dialog).to_be_visible()
-        if provider == 'apple':
-            # RSDSINFRA-32: backend protocol fixture coverage, not an Apple UI option.
-            expect(dialog.get_by_text('Apple', exact=False)).to_have_count(0)
-            self.page.goto(BASE_URL + '/api/auth/oauth2/authorization/apple' + ('?lang=pl' if route.startswith('/pl/') else ''))
-        else:
-            dialog.get_by_role('link', name=('Kontynuuj z ' if route.startswith('/pl/') else 'Continue with ') + LABELS.get(provider, provider.capitalize()), exact=True).click()
+        dialog.get_by_role('link', name=('Kontynuuj z ' if route.startswith('/pl/') else 'Continue with ') + LABELS.get(provider, provider.capitalize()), exact=True).click()
         expect(self.page.get_by_role('heading', name=f'Local {provider} identity provider')).to_be_visible()
         self.page.get_by_role('button', name=choice, exact=True).click()
         if complete:
@@ -303,7 +298,7 @@ class AuthenticationTests(unittest.TestCase):
             repeated = self.context.request.get(BASE_URL + '/api/auth/me').json()
             self.assertEqual(repeated['subject'], identity['subject'])
             self.assertEqual(repeated['avatarColor'], identity['avatarColor'])
-        self.assertEqual(len(subjects), 5, 'Matching provider emails cannot link internal accounts')
+        self.assertEqual(len(subjects), len(PROVIDERS), 'Matching provider emails cannot link internal accounts')
 
     def test_unverified_email_signs_in_immediately_without_linking_verified_owner(self):
         self.login('google')
@@ -396,14 +391,21 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(identity['subject'], original['subject'])
         self.assertEqual(identity['email'], original['email'])
 
-    def test_apple_private_relay_is_discarded_and_provider_account_is_distinct(self):
-        self.login('google')
-        original = self.context.request.get(BASE_URL + '/api/auth/me').json()
-        self.context.clear_cookies()
-        self.login('apple', 'Continue with Apple relay')
-        identity = self.context.request.get(BASE_URL + '/api/auth/me').json()
-        self.assertEqual(identity['email'], '')
-        self.assertNotEqual(identity['subject'], original['subject'])
+    def test_deferred_apple_is_disabled_and_direct_login_cannot_authenticate(self):
+        response = self.context.request.get(BASE_URL + '/api/auth/providers')
+        self.assertEqual(response.status, 200)
+        providers = {item['id']: item['enabled'] for item in response.json()}
+        self.assertIs(providers.get('apple'), False)
+        for provider in PROVIDERS:
+            self.assertIs(providers.get(provider), True)
+        response = self.context.request.get(BASE_URL + '/api/auth/oauth2/authorization/apple', max_redirects=0)
+        self.assertIn(response.status, [302, 400, 401, 403, 404])
+        location = response.headers.get('location', '')
+        self.assertNotIn('appleid.apple.com', location)
+        self.assertNotIn('/__test/idp/', location)
+        self.assertNotIn('login=success', location)
+        self.assertFalse(self.context.request.get(BASE_URL + '/api/auth/session').json()['authenticated'])
+        self.assertFalse(any(cookie['name'] == 'RSDS_ACCESS' for cookie in self.context.cookies()))
 
 
 
@@ -426,8 +428,28 @@ def rejected_login(provider, choice):
 for provider in PROVIDERS:
     setattr(AuthenticationTests, f'test_{provider}_authorization_to_jwt', successful_login(provider))
     setattr(AuthenticationTests, f'test_{provider}_consent_denied', rejected_login(provider, 'Deny consent'))
-for provider in ['google', 'microsoft', 'apple']:
+for provider in ['google', 'microsoft']:
     setattr(AuthenticationTests, f'test_{provider}_invalid_signature', rejected_login(provider, 'Invalid token signature'))
+
+
+def apple_absent(language, width):
+    def test(self):
+        self.page.set_viewport_size({'width': width, 'height': 900})
+        self.page.goto(BASE_URL + ('/pl/' if language == 'pl' else '/'))
+        self.page.get_by_role('button', name='Zaloguj się' if language == 'pl' else 'Log in', exact=True).click()
+        dialog = self.page.get_by_role('dialog')
+        expect(dialog).to_be_visible()
+        for provider in PROVIDERS:
+            expect(dialog.get_by_role('link', name=('Kontynuuj z ' if language == 'pl' else 'Continue with ') + LABELS.get(provider, provider.capitalize()), exact=True)).to_be_visible()
+        expect(dialog.get_by_text('Apple', exact=False)).to_have_count(0)
+        expect(dialog.locator('img[src*="apple"], a[href*="/authorization/apple"]')).to_have_count(0)
+        self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'), width)
+    return test
+
+
+for language in ['en', 'pl']:
+    for width in [320, 1440]:
+        setattr(AuthenticationTests, f'test_apple_absent_{language}_{width}', apple_absent(language, width))
 
 
 if __name__ == '__main__':
