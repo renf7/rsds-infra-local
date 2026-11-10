@@ -35,9 +35,9 @@ These tests cover current static behavior. They do not claim pixel-perfect visua
 
 ## Optional authentication integration
 
-Select `--manifest local-test-auth.json --e2e` and the four matching PR overrides documented in the root README. This runs 46 headless tests: the 16 existing marketing behavior tests plus 30 authentication tests. Authentication remains disabled in the default manifest; browser tests always require the explicit flag.
+Select `--manifest local-test-auth.json --e2e` and the four matching PR overrides documented in the root README. This runs 49 headless tests: the 16 existing marketing behavior tests plus 33 authentication tests. Authentication remains disabled in the default manifest; browser tests always require the explicit flag.
 
-All five provider flows traverse the real browser, Spring Security callback, real DynamoDB Local adapter, signed JWT cookie and authenticated API. The local provider fixture replaces only external OAuth/OIDC endpoints. It checks state-bound one-use authorization codes, redirects, nonce, supported PKCE and Apple's real ES256 client-secret signature using a public key only. Tests cover consent denial, invalid OIDC signatures, forged state, tampered JWTs, CSRF, logout, refresh replay, Polish return navigation and the signed-in 320px header.
+The four enabled provider flows traverse the real browser, Spring Security callback, real DynamoDB Local adapter, signed JWT cookie and authenticated API. The local provider fixture replaces only external OAuth/OIDC endpoints. It checks state-bound one-use authorization codes, redirects, nonce, supported PKCE. Apple is disabled in this full-stack suite; isolated Apple protocol coverage remains in auth-service tests. Tests cover consent denial, invalid OIDC signatures, forged state, tampered JWTs, CSRF, logout, refresh replay, Polish return navigation and the signed-in 320px header.
 
 Reports explicitly identify `identityProviderMode=local-protocol-fixture`. No live provider accounts or app registrations are used, so this is not proof of live-provider interoperability, consent policies or MFA. Authentication traces are omitted to avoid recording credentials; screenshots, JSON and JUnit remain. Never upload generated signing keys, kubeconfigs, JWTs or cookies.
 
