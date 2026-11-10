@@ -1,5 +1,11 @@
 # rsds-infra-local
 
+## Fixed address for the owner's manual SSO testing
+
+Always expose future real-provider manual previews on this machine at **https://localhost:18443**. The owner reconfigured the provider applications and confirmed successful sign-in on 10 November 2026. Their registered callbacks use `https://localhost:18443/api/auth/login/oauth2/code/{provider}`. Keep `RSDS_AUTH_PUBLIC_BASE_URL=https://localhost:18443` in the private provider configuration. Do not replace the scheme, hostname or port without coordinating new provider registrations.
+
+The existing HTTPS proxy forwards to internal HTTP port 18093. Preserve that proxy, its trusted certificate, the provider configuration and existing application database when replacing images. Check TLS/signing certificate validity before manual handover. The local setup is documented in the ignored `.local-github-live/HTTPS-README.md`. Other HTTP/port examples below are generic or isolated test examples; they are not replacement addresses for this owner's manual SSO environment. Automated fixture E2E may continue on separate isolated ports, with `--e2e` explicitly selected.
+
 Run the RSDS-INFRA application locally through its real Helm chart before production deployment. Jira: [RSDSINFRA-25](https://rsdsoftware.atlassian.net/browse/RSDSINFRA-25).
 
 ## Prerequisites

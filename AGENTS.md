@@ -1,5 +1,7 @@
 # Agent instructions
 
+Owner's fixed manual SSO origin (confirmed 10 November 2026): https://localhost:18443. All future real-provider manual previews on this machine must use that exact scheme/hostname/port and /api/auth/login/oauth2/code/{provider} callbacks. Do not expose a replacement origin: changing it breaks the configured OAuth registrations. Keep the HTTPS proxy, provider configuration and existing database; internal HTTP upstream 18093 is not the user-facing address. Separate fixture E2E ports remain allowed and must be clearly labelled. Check local TLS/signing certificate validity before handing over a preview.
+
 Before running local validation, follow README.md sections "Reproduce the successful local run" and "Troubleshooting without losing evidence". They document the tested Docker/cgroup workaround, context selection for builds, isolated workdirs/ports, stale-binary handling, evidence requirements and owned-state cleanup. Keep the human/agent runbook current when changing those behaviors.
 
 This Go repository is part of renf7's rsds-infra family. Read the canonical standard at https://github.com/renf7/rsds-infra-helm/blob/main/docs/security/REPOSITORY-STANDARD.md (until merged, Helm PR #4 / branch RSDSINFRA-24-security-scanning).
