@@ -399,7 +399,7 @@ class AuthenticationTests(unittest.TestCase):
         for provider in PROVIDERS:
             self.assertIs(providers.get(provider), True)
         response = self.context.request.get(BASE_URL + '/api/auth/oauth2/authorization/apple', max_redirects=0)
-        self.assertIn(response.status, [302, 400, 401, 403, 404])
+        self.assertEqual(response.status, 404)
         location = response.headers.get('location', '')
         self.assertNotIn('appleid.apple.com', location)
         self.assertNotIn('/__test/idp/', location)
