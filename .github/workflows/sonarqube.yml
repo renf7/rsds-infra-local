@@ -27,7 +27,7 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_PROJECT_KEY: ${{ github.event.repository.name }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -50,7 +50,7 @@ jobs:
           out/rsds-local up --docker-context default --workdir .local-pr --cluster rsds-local-ci-pr --port 18081 --pr rsds-infra-helm=4 --pr rsds-infra-company-page=9 --e2e
           out/rsds-local status --workdir .local-pr
           out/rsds-local down --workdir .local-pr
-          out/rsds-local up --docker-context default --manifest local-test-auth.json --workdir .local-auth --cluster rsds-local-ci-auth --port 18082 --pr rsds-infra-auth-service=6 --pr rsds-infra-company-page=26 --pr rsds-infra-helm=12 --pr rsds-infra-local=2 --e2e
+          out/rsds-local up --docker-context default --manifest local-test-auth.json --workdir .local-auth --cluster rsds-local-ci-auth --port 18082 --pr rsds-infra-auth-service=6 --pr rsds-infra-company-page=26 --pr rsds-infra-helm=12 --pr rsds-infra-local=11 --e2e
           pwsh -NoProfile -File scripts/Test-ProviderVisibility.ps1 -RunDirectory .local-auth/runs/rsds-local-ci-auth
           out/rsds-local status --workdir .local-auth
           out/rsds-local down --workdir .local-auth
@@ -118,7 +118,7 @@ jobs:
                   raise SystemExit("Cannot set public visibility (HTTP " + str(error.code) + "). A project administrator must set Administration > Permissions > Public; do not grant a broad token just for CI.")
           PY
       - name: Analyze and wait for the quality gate
-        uses: SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304
+        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65
         with:
           args: >
             -Dsonar.projectKey=${{ github.event.repository.name }}

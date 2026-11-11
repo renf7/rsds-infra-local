@@ -4,11 +4,11 @@ Verified 30 October 2026 against official upstream GitHub releases and the repos
 
 | Check | Version / scope | Trigger |
 | --- | --- | --- |
-| CodeQL | Action 4.39.1; Go, Python E2E tooling and GitHub Actions; security-extended queries | Every PR update, main pushes, weekly |
+| CodeQL | Action 4.39.2; Go, Python E2E tooling and GitHub Actions; security-extended queries | Every PR update, main pushes, weekly |
 | Semgrep Community Edition | 1.183.0; OSS engine, community p/default rules; no account | Every PR update, main pushes, weekly |
 | Trivy repository | CLI 0.76.1 / Action 0.36.0; dependencies, misconfiguration, secrets | Every PR update, main pushes, weekly |
 | PR dependency vulnerability scan | Trivy 0.76.1; full manifest scan, not native base/head dependency diff | Every PR update |
-| SonarQube Cloud | Scan Action 8.4.0; public rsds-infra-local project, blocking quality gate | Same-repository PRs to main, main pushes, weekly |
+| SonarQube Cloud | Scan Action 8.4.1; public rsds-infra-local project, blocking quality gate | Same-repository PRs to main, main pushes, weekly |
 | Go checks | gofmt, go test -race, go vet; Go 1.26 | Every PR update and main pushes |
 | Trivy E2E image | CLI 0.76.1 / Action 0.36.0; built browser test image vulnerabilities/secrets | Every PR update, main pushes, weekly |
 | Dependabot version updates | GitHub Actions, pip scanner/E2E tools, Go modules, E2E Docker base | Weekly after configuration reaches main |
@@ -34,3 +34,14 @@ CodeQL bundle tags are separate from Action releases; do not replace an Action p
 Authentication integration adds a second built-image scan for test-idp and pip/Docker Dependabot coverage. Its Python runtime is updated to 3.15.2 (latest stable verified at https://www.python.org/downloads/ on 30 October 2026), with cryptography 50.0.2. Runtime packaging tools are removed after installation: Trivy identified vulnerable vendored msgpack/urllib3 in unused pip/ensurepip. Neither the image nor findings are excluded from scanning. The local provider fixture receives public Apple client trust only.
 
 1 November 2026: local-only SMTP fixture uses official Mailpit v1.33.0 pinned by digest 9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231 (https://github.com/axllent/mailpit/releases/tag/v1.33.0). Real Trivy0.76.1 vulnerability/secret scan returned zero HIGH/CRITICAL findings for Alpine and the Go binary. A separate PR image scan retains this coverage; keep its pin and Helm values synchronized. Browser/account tests continue to require explicit --e2e.
+
+## RSDSINFRA-38 consolidation (11 November 2026)
+
+Consolidates Dependabot PRs #4, #5, #6, #7, #9 and #10: CodeQL init/analyze
+4.39.2 at the same SHA; pip 26.3; checkout 7.0.1; Sonar scan 8.4.1;
+setup-python 7.1.0. Existing SHA pins and non-publishing PR policy remain.
+PR #8 proposes pyee 16.0.1, which is incompatible with Playwright 1.64.1:
+upstream PyPI metadata declares `pyee>=13,<15`. Keep 14.0.0 until a matched
+Playwright/browser release supports a newer pyee. Do not use --no-deps or force
+an incompatible major version. This disposition accounts for the seventh PR.
+Metadata: https://pypi.org/pypi/playwright/1.64.1/json
