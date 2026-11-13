@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/playwright/python:v1.64.1-noble
+FROM mcr.microsoft.com/playwright/python:v1.65.1-noble
 WORKDIR /app
 COPY requirements.txt .
 RUN apt-get update && apt-get upgrade -y \
