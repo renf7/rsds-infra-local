@@ -1,4 +1,4 @@
-FROM python:3.15.2-alpine
+FROM python:3.16.0a1-alpine
 RUN apk upgrade --no-cache
 WORKDIR /app
 COPY requirements.txt .
